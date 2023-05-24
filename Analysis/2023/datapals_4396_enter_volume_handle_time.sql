@@ -1,4 +1,5 @@
 -- author: john darrah
+-- ticket: DATAPALS-4396
 -- sources:
 -- -- risk: app_cash_cs.public.combined_risk_daily_volume
 -- -- https://github.com/squareup/app-datamart-cco/blob/main/jobs/combined_risk_daily_volume/combined_risk_daily_volume.sql
