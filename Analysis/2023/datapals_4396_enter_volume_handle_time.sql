@@ -5,6 +5,7 @@
 -- -- https://github.com/squareup/app-datamart-cco/blob/main/jobs/combined_risk_daily_volume/combined_risk_daily_volume.sql
 -- -- https://squarewave.sqprod.co/#/jobs/13232/sql
 -- -- https://block.sourcegraph.com/github.com/squareup/app-datamart-cco/-/blob/jobs/cash_card_customizations/cash_card_customizations.sql
+-- -- https://squarewave.sqprod.co/#/jobs/12355/sql
 -- -- non-risk: app_datamart_cco.public.universal_touches
 
 -- Action Items
