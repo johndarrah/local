@@ -1,7 +1,10 @@
 -- author: john darrah
 -- ticket: datapals-4396
 
--- Note that not all the risk cases have handle time. If the case lives outside of CF1 or Notary then the handle time isn't calculated.
+-- description:
+-- Case volume and handle times for CS & Risk cases.
+-- Note that not all the risk cases have handle time.
+-- If the case lives outside of CF1 or Notary then the handle time isn't calculated.
 -- This may be because of the process for how the case is handled or limitations on what fields are available.
 
 -- -- risk sources:
@@ -138,7 +141,7 @@ WITH
     , brp.employee_id::STRING                       AS advocate_id
     , 'banking_risk'                                AS source
     , 'app_cash_cs.public.banking_risk_performance' AS data_source
-    , tqc.queue_name || '- no handle time'          AS team_name
+    , '[No Handle Time] ' || tqc.queue_name         AS team_name
     , NULL                                          AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.banking_risk_performance brp
@@ -148,11 +151,11 @@ WITH
 )
   , banking_risk_entered_04 AS (
   SELECT
-    d.dt                                  AS dt
-    , brp.case_id                         AS case_id
-    , 'internal transfer'                 AS channel
-    , 'banking_risk'                      AS source
-    , tqc.team_name || '- no handle time' AS team_name
+    d.dt                                   AS dt
+    , brp.case_id                          AS case_id
+    , 'internal transfer'                  AS channel
+    , 'banking_risk'                       AS source
+    , '[No Handle Time] ' || tqc.team_name AS team_name
   FROM dt d
   JOIN app_cash_cs.public.banking_risk_performance brp
     ON brp.report_date = d.dt
@@ -170,7 +173,7 @@ WITH
     , bh.employee_id                            AS advocate_id
     , 'banking_hashtag'                         AS source
     , 'app_cash_cs.public.banking_hashtags'     AS data_source
-    , 'Remote Deposit Capture - no handle time' AS team_name
+    , '[No Handle Time] Remote Deposit Capture' AS team_name
     , NULL                                      AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.banking_hashtags bh
@@ -184,7 +187,7 @@ WITH
     , bh.primary_key                            AS case_id
     , 'internal transfer'                       AS channel
     , 'banking_hashtag'                         AS source
-    , 'Remote Deposit Capture - no handle time' AS team_name
+    , '[No Handle Time] Remote Deposit Capture' AS team_name
   FROM dt d
   JOIN app_cash_cs.public.banking_hashtags bh
     ON d.dt = bh.hashtag_at
@@ -201,7 +204,7 @@ WITH
     , 'cash_card_customization'                              AS source
     , 'app_cash_cs.public.risk_cash_card_customization_fact' AS data_source
     --     , rcccf.event_type                                       as team_name
-    , 'AR - no handle time'                                  AS team_name
+    , '[No Handle Time] AR'                                  AS team_name
     , NULL                                                   AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.risk_cash_card_customization_fact rcccf
@@ -215,7 +218,7 @@ WITH
     , rcccf.customer_token::STRING AS case_id
     , NULL                         AS channel
     , 'cash_card_customization'    AS source
-    , 'AR - no handle time'        AS team_name
+    , '[No Handle Time] AR'        AS team_name
   FROM dt d
   JOIN app_cash_cs.public.risk_cash_card_customization_fact rcccf
     ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', rcccf.created_at_pt)
@@ -332,11 +335,11 @@ WITH
 )
   , monthly_entering_volume AS (
   SELECT
-    DATE_TRUNC(MONTH, ev.dt)           AS month_dt
-    , NVL(tqc.team_name, ev.team_name) AS team_name
-    , COUNT(ev.case_id)                AS entering_volume
-    --     , COUNT(IFF(RIGHT(ev.team_name, 14) != 'no handle time', ev.case_id, NULL)) AS entering_volume_with_ht
-    --     , COUNT(IFF(RIGHT(ev.team_name, 14) = 'no handle time', ev.case_id, NULL))  AS entering_volume_without_ht
+    DATE_TRUNC(MONTH, ev.dt)                                                      AS month_dt
+    , LOWER(NVL(tqc.team_name, ev.team_name))                                     AS team_name
+    , COUNT(ev.case_id)                                                           AS entering_volume
+    , COUNT(IFF(LEFT(ev.team_name, 17) != '[No Handle Time] ', ev.case_id, NULL)) AS entering_volume_with_ht
+    , COUNT(IFF(LEFT(ev.team_name, 17) = '[No Handle Time] ', ev.case_id, NULL))  AS entering_volume_without_ht
   FROM entered_volume ev
   LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(ev.team_name) = LOWER(tqc.queue_name)
@@ -344,27 +347,31 @@ WITH
 )
   , monthly_handle_time AS (
   SELECT
-    DATE_TRUNC(MONTH, hv.dt)           AS month_dt
-    , NVL(tqc.team_name, hv.team_name) AS team_name
-    , SUM(hv.handle_time)              AS handle_time_seconds
+    DATE_TRUNC(MONTH, hv.dt)                  AS month_dt
+    , LOWER(NVL(tqc.team_name, hv.team_name)) AS team_name
+    , SUM(hv.handle_time)                     AS handle_time_seconds
+    , SUM(hv.handle_time) / 60                AS handle_time_minutes
   FROM handled_volume hv
   LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(hv.team_name) = LOWER(tqc.queue_name)
   GROUP BY 1, 2
 )
 
-SELECT DISTINCT
+SELECT
   mev.month_dt
-  , mev.team_name
-  , mev.entering_volume
-  --   , mev.entering_volume_with_ht
-  --   , mev.entering_volume_without_ht
-  , mhv.handle_time_seconds
+  , IFF(LEFT(mev.team_name, 17) = '[no handle time] ',
+        TRIM(SUBSTR(mev.team_name, 17, LEN(mev.team_name))),
+        mev.team_name)                  AS team_name
+  , SUM(mev.entering_volume)            AS total_entering_volume
+  , SUM(mev.entering_volume_with_ht)    AS entering_volume_with_ht
+  , SUM(mev.entering_volume_without_ht) AS entering_volume_without_ht
+  , SUM(mhv.handle_time_minutes)        AS handle_time_minutes
 FROM monthly_entering_volume mev
 LEFT JOIN monthly_handle_time mhv
   ON mev.month_dt = mhv.month_dt
   AND mev.team_name = mhv.team_name
-ORDER BY mev.month_dt DESC, mev.team_name
+GROUP BY 1, 2
+ORDER BY 1 DESC, 2
 ;
 
 -- -- -- Quality Checks
