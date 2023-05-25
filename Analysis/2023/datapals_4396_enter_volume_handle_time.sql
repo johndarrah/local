@@ -1,18 +1,23 @@
 -- author: john darrah
--- ticket: DATAPALS-4396
--- sources:
--- -- risk: app_cash_cs.public.combined_risk_daily_volume
--- -- https://github.com/squareup/app-datamart-cco/blob/main/jobs/combined_risk_daily_volume/combined_risk_daily_volume.sql
--- -- https://squarewave.sqprod.co/#/jobs/13232/sql
--- -- https://block.sourcegraph.com/github.com/squareup/app-datamart-cco/-/blob/jobs/cash_card_customizations/cash_card_customizations.sql
--- -- https://squarewave.sqprod.co/#/jobs/12355/sql
--- -- non-risk: app_datamart_cco.public.universal_touches
+-- ticket: datapals-4396
 
--- Action Items
--- missing handle time
--- teams for risk
+-- Note that not all the risk cases have handle time. If the case lives outside of CF1 or Notary then the handle time isn't calculated.
+-- This may be because of the process for how the case is handled or limitations on what fields are available.
+
+-- -- risk sources:
+-- -- most trusted source: app_cash_cs.public.combined_risk_daily_volume
+-- -- regulator cases: https://squarewave.sqprod.co/#/jobs/13232/sql
+-- -- cash card customizations: https://github.com/squareup/app-datamart-cco/blob/main/jobs/cash_card_customizations/cash_card_customizations.sql
+-- -- banking_risk_performance: https://squarewave.sqprod.co/#/jobs/12355/sql
+
+-- -- non-risk sources:
+-- -- cf1 views: https://github.com/squareup/app-datamart-cco/tree/main/jobs/cf1_touches_views
+-- -- sfdc cf1 views: https://github.com/squareup/app-datamart-cco/tree/main/jobs/sfdc_cf1_touches
+-- -- notary views: https://github.com/squareup/app-datamart-cco/blob/main/jobs/notary_views/notary_views.sql
+
 
 -- CREATE OR REPLACE TABLE personal_johndarrah.public.touch_analysis_2023_05_22 AS
+
 WITH
   dt AS (
     SELECT DISTINCT
@@ -48,7 +53,7 @@ WITH
   FROM regulator_base
     PIVOT (MAX(created_at) FOR logical_event_name IN ('CREATE_CASE','ASSIGN' , 'CLOSED_COMPLETE')) AS p
 )
-  , cfone_handled_01 AS (
+  , universal_touches_01 AS (
   SELECT
     d.dt                                          AS dt
     , ut.case_id                                  AS case_id
@@ -61,7 +66,7 @@ WITH
   FROM dt d
   JOIN app_datamart_cco.public.universal_touches ut
     ON ut.touch_end_time::DATE = d.dt
-    AND ut.source = 'cfone'
+    AND ut.source IN ('cfone', 'awc', 'notary')
   JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON ut.last_assigned_queue_id = tqc.queue_id
 )
@@ -78,23 +83,6 @@ WITH
   JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON sc.first_assigned_queue = tqc.queue_name
 )
-  , voice_handled_02 AS (
-  SELECT
-    d.dt                                          AS dt
-    , ut.case_id                                  AS case_id
-    , ut.channel                                  AS channel
-    , ut.advocate_id                              AS advocate_id
-    , ut.source                                   AS source
-    , 'app_datamart_cco.public.universal_touches' AS data_source
-    , tqc.team_name                               AS team_name
-    , ut.handle_time                              AS handle_time
-  FROM dt d
-  JOIN app_datamart_cco.public.universal_touches ut
-    ON ut.touch_end_time::DATE = d.dt
-    AND ut.source = 'awc'
-  JOIN app_datamart_cco.public.team_queue_catalog tqc
-    ON ut.last_assigned_queue_id = tqc.queue_id
-)
   , voice_entered_02 AS (
   SELECT
     d.dt                               AS dt
@@ -110,30 +98,32 @@ WITH
   WHERE
     cf.case_id IS NULL
 )
-  , notary_handled_03 AS (
-  SELECT
-    d.dt                                          AS dt
-    , ut.case_id                                  AS case_id
-    , ut.channel                                  AS channel
-    , ut.advocate_id                              AS advocate_id
-    , ut.source                                   AS source
-    , 'app_datamart_cco.public.universal_touches' AS data_source
-    , tqc.team_name                               AS team_name
-    , ut.handle_time                              AS handle_time
-  FROM dt d
-  JOIN app_datamart_cco.public.universal_touches ut
-    ON ut.touch_end_time::DATE = d.dt
-    AND ut.source = 'notary'
-  JOIN app_datamart_cco.public.team_queue_catalog tqc
-    ON ut.last_assigned_queue_id = tqc.queue_id
-)
   , notary_entered_03 AS (
   SELECT DISTINCT
-    d.dt                            AS dt
-    , naq.assignment_id             AS case_id
-    , NULL                          AS channel
-    , 'notary'                      AS source
-    , NVL(naq.team_code, naq.queue) AS team_name
+    d.dt                AS dt
+    , naq.assignment_id AS case_id
+    , NULL              AS channel
+    , 'notary'          AS source
+    , CASE
+        WHEN
+          NVL(naq.team_code, naq.queue) ILIKE ANY ('%risk_elder_abuse%', '%threat_of_harm%')
+          THEN 'Abuse'
+        WHEN NVL(naq.team_code, naq.queue) ILIKE '%scam_payment%'
+          THEN 'Scams'
+        WHEN NVL(naq.team_code, naq.queue) ILIKE '%instrument_verification%'
+          THEN 'EV/IV'
+        WHEN NVL(naq.team_code, naq.queue) ILIKE ANY ('%enhanced_verification%', '%account based reviews%')
+          THEN 'EV/IV'
+        WHEN NVL(naq.team_code, naq.queue) ILIKE ANY ('%risk_elder_abuse%', '%threat_of_harm%')
+          THEN 'Abuse'
+        WHEN NVL(naq.team_code, naq.queue) ILIKE '%ato%'
+          THEN 'ATO'
+        WHEN NVL(naq.team_code, naq.queue) ILIKE '%check_deposit_manual_review_cash%'
+          THEN 'Remote Deposit Capture'
+        WHEN NVL(naq.team_code, naq.queue) = 'Cash - Service Disputes'
+          THEN 'Disputes'
+        ELSE NVL(naq.team_code, naq.queue)
+      END               AS team_name
   FROM dt d
   JOIN app_cash_cs.public.notary_assignments_queue naq
     ON d.dt = naq.occurred_at
@@ -148,48 +138,40 @@ WITH
     , brp.employee_id::STRING                       AS advocate_id
     , 'banking_risk'                                AS source
     , 'app_cash_cs.public.banking_risk_performance' AS data_source
-    , brp.case_type                                 AS team_name
+    , tqc.queue_name || '- no handle time'          AS team_name
     , NULL                                          AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.banking_risk_performance brp
     ON brp.report_date = d.dt
+  LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
+    ON LOWER(brp.case_type) = LOWER(tqc.queue_name)
 )
-  --    not complete
   , banking_risk_entered_04 AS (
   SELECT
-    d.dt                  AS dt
-    , brp.case_id         AS case_id
-    , 'internal transfer' AS channel
-    , 'banking_risk'      AS source
-    , brp.case_type       AS team_name
+    d.dt                                  AS dt
+    , brp.case_id                         AS case_id
+    , 'internal transfer'                 AS channel
+    , 'banking_risk'                      AS source
+    , tqc.team_name || '- no handle time' AS team_name
   FROM dt d
   JOIN app_cash_cs.public.banking_risk_performance brp
     ON brp.report_date = d.dt
+  LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
+    ON LOWER(brp.case_type) = LOWER(tqc.queue_name)
   QUALIFY
     ROW_NUMBER() OVER (PARTITION BY brp.case_id ORDER BY brp.created_date_pst) = 1
 )
   -- regulator: determines the type of banking fraud is coming
   , banking_hashtag_handled_05 AS (
   SELECT
-    d.dt                                    AS dt
-    , bh.primary_key                        AS case_id
-    , 'internal transfer'                   AS channel
-    , bh.employee_id                        AS advocate_id
-    , 'banking_hashtag'                     AS source
-    , 'app_cash_cs.public.banking_hashtags' AS data_source
-    --     , ra.subroute                           as team_name
-    , CASE
-        WHEN bh.team_code IS NOT NULL
-          THEN bh.team_code
-        WHEN bh.hashtag ILIKE '%RAR%'
-          THEN 'rar'
-        WHEN bh.hashtag ILIKE ANY ('%RDC_RETURN%', '%RDC_RF_RETURN%')
-          THEN 'returns'
-        WHEN bh.hashtag ILIKE '%DAN%'
-          THEN 'dan'
-        ELSE NULL
-      END                                   AS team_name
-    , ra.handled_seconds                    AS handle_time
+    d.dt                                        AS dt
+    , bh.primary_key                            AS case_id
+    , 'internal transfer'                       AS channel
+    , bh.employee_id                            AS advocate_id
+    , 'banking_hashtag'                         AS source
+    , 'app_cash_cs.public.banking_hashtags'     AS data_source
+    , 'Remote Deposit Capture - no handle time' AS team_name
+    , NULL                                      AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.banking_hashtags bh
     ON d.dt = bh.hashtag_at
@@ -198,21 +180,11 @@ WITH
 )
   , banking_hashtag_entered_05 AS (
   SELECT
-    d.dt                  AS dt
-    , bh.primary_key      AS case_id
-    , 'internal transfer' AS channel
-    , 'banking_hashtag'   AS source
-    , CASE
-        WHEN bh.team_code IS NOT NULL
-          THEN bh.team_code
-        WHEN bh.hashtag ILIKE '%RAR%'
-          THEN 'rar'
-        WHEN bh.hashtag ILIKE ANY ('%RDC_RETURN%', '%RDC_RF_RETURN%')
-          THEN 'returns'
-        WHEN bh.hashtag ILIKE '%DAN%'
-          THEN 'dan'
-        ELSE NULL
-      END                 AS team_name
+    d.dt                                        AS dt
+    , bh.primary_key                            AS case_id
+    , 'internal transfer'                       AS channel
+    , 'banking_hashtag'                         AS source
+    , 'Remote Deposit Capture - no handle time' AS team_name
   FROM dt d
   JOIN app_cash_cs.public.banking_hashtags bh
     ON d.dt = bh.hashtag_at
@@ -229,8 +201,8 @@ WITH
     , 'cash_card_customization'                              AS source
     , 'app_cash_cs.public.risk_cash_card_customization_fact' AS data_source
     --     , rcccf.event_type                                       as team_name
-    , NVL(rcccf.team_code, ra.subroute)                      AS team_name
-    , ra.handled_seconds                                     AS handle_time
+    , 'AR - no handle time'                                  AS team_name
+    , NULL                                                   AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.risk_cash_card_customization_fact rcccf
     ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', rcccf.review_completed_at_pt)
@@ -239,11 +211,11 @@ WITH
 )
   , cash_card_entered_06 AS (
   SELECT
-    d.dt                                     AS dt
-    , rcccf.customer_token::STRING           AS case_id
-    , NULL                                   AS channel
-    , 'cash_card_customization'              AS source
-    , NVL(rcccf.team_code, rcccf.event_type) AS team_name
+    d.dt                           AS dt
+    , rcccf.customer_token::STRING AS case_id
+    , NULL                         AS channel
+    , 'cash_card_customization'    AS source
+    , 'AR - no handle time'        AS team_name
   FROM dt d
   JOIN app_cash_cs.public.risk_cash_card_customization_fact rcccf
     ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', rcccf.created_at_pt)
@@ -258,33 +230,7 @@ WITH
     , data_source
     , team_name
     , handle_time
-  FROM cfone_handled_01
-
-  UNION ALL
-
-  SELECT
-    dt
-    , case_id
-    , channel
-    , advocate_id
-    , source
-    , data_source
-    , team_name
-    , handle_time
-  FROM voice_handled_02
-
-  UNION ALL
-
-  SELECT
-    dt
-    , case_id
-    , channel
-    , advocate_id
-    , source
-    , data_source
-    , team_name
-    , handle_time
-  FROM notary_handled_03
+  FROM universal_touches_01
 
   UNION ALL
 
@@ -386,9 +332,11 @@ WITH
 )
   , monthly_entering_volume AS (
   SELECT
-    DATE_TRUNC(MONTH, ev.dt) AS month_dt
-    , LOWER(tqc.team_name)   AS team_name
-    , COUNT(ev.case_id)      AS entering_volume
+    DATE_TRUNC(MONTH, ev.dt)           AS month_dt
+    , NVL(tqc.team_name, ev.team_name) AS team_name
+    , COUNT(ev.case_id)                AS entering_volume
+    --     , COUNT(IFF(RIGHT(ev.team_name, 14) != 'no handle time', ev.case_id, NULL)) AS entering_volume_with_ht
+    --     , COUNT(IFF(RIGHT(ev.team_name, 14) = 'no handle time', ev.case_id, NULL))  AS entering_volume_without_ht
   FROM entered_volume ev
   LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(ev.team_name) = LOWER(tqc.queue_name)
@@ -396,24 +344,27 @@ WITH
 )
   , monthly_handle_time AS (
   SELECT
-    DATE_TRUNC(MONTH, hv.dt) AS month_dt
-    , LOWER(tqc.team_name)   AS team_name
-    , SUM(hv.handle_time)    AS handle_time_seconds
+    DATE_TRUNC(MONTH, hv.dt)           AS month_dt
+    , NVL(tqc.team_name, hv.team_name) AS team_name
+    , SUM(hv.handle_time)              AS handle_time_seconds
   FROM handled_volume hv
   LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(hv.team_name) = LOWER(tqc.queue_name)
   GROUP BY 1, 2
 )
+
 SELECT DISTINCT
   mev.month_dt
   , mev.team_name
   , mev.entering_volume
+  --   , mev.entering_volume_with_ht
+  --   , mev.entering_volume_without_ht
   , mhv.handle_time_seconds
 FROM monthly_entering_volume mev
-JOIN monthly_handle_time mhv
+LEFT JOIN monthly_handle_time mhv
   ON mev.month_dt = mhv.month_dt
   AND mev.team_name = mhv.team_name
-ORDER BY mev.month_dt DESC, mev.entering_volume DESC
+ORDER BY mev.month_dt DESC, mev.team_name
 ;
 
 -- -- -- Quality Checks
@@ -445,9 +396,11 @@ ORDER BY mev.month_dt DESC, mev.entering_volume DESC
 -- WHERE
 --   hs.case_id IS NULL
 -- ORDER BY 1 DESC
--- -- null team name
--- SELECT *
--- FROM entered_sources
+-- -- team name analysis
+-- SELECT DISTINCT
+--   team_name
+--   , source
+-- FROM entered_volume
 -- WHERE
---   source NOT IN ('cfone', 'voice')
+--   source NOT IN ('cfone', 'voice', 'amazon connect', 'notary')
 -- AND team_name IS NULL
