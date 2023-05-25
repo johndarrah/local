@@ -32,7 +32,7 @@ WITH
   )
   , regulator_base AS (
   SELECT
-    TO_VARCHAR(case_token, 'UTF-8')             AS case_token
+    TO_VARCHAR(rc.target_token, 'UTF-8')        AS target_token
     , ql.name                                   AS subroute
     , a.created_at
     , TO_VARCHAR(a.logical_event_name, 'UTF-8') AS logical_event_name
@@ -48,7 +48,7 @@ WITH
   --    C_h42twqmxn missing from regulator
   , regulator_agg AS (
   SELECT
-    case_token
+    target_token
     , subroute
     , p."'ASSIGN'"                            AS assign_ts
     , p."'CLOSED_COMPLETE'"                   AS closed_ts
@@ -71,7 +71,7 @@ WITH
     ON ut.touch_end_time::DATE = d.dt
     AND ut.source IN ('cfone', 'awc', 'notary')
   JOIN app_datamart_cco.public.team_queue_catalog tqc
-    ON lower(ut.queue_name) = lower(tqc.queue_name)
+    ON LOWER(ut.queue_name) = LOWER(tqc.queue_name)
 )
   , cfone_entered_01 AS (
   SELECT
@@ -84,7 +84,7 @@ WITH
   JOIN app_cash_cs.public.support_cases sc
     ON sc.case_creation_date::DATE = d.dt
   JOIN app_datamart_cco.public.team_queue_catalog tqc
-    ON sc.first_assigned_queue = tqc.queue_name
+    ON sc.last_assigned_queue_id = tqc.queue_id -- need to use the last queue bc it may not have started in the right queue
 )
   , voice_entered_02 AS (
   SELECT
@@ -179,7 +179,7 @@ WITH
   JOIN app_cash_cs.public.banking_hashtags bh
     ON d.dt = bh.hashtag_at
   LEFT JOIN regulator_agg ra
-    ON bh.target_token = ra.case_token
+    ON bh.target_token = ra.target_token
 )
   , banking_hashtag_entered_05 AS (
   SELECT
@@ -210,7 +210,7 @@ WITH
   JOIN app_cash_cs.public.risk_cash_card_customization_fact rcccf
     ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', rcccf.review_completed_at_pt)
   LEFT JOIN regulator_agg ra
-    ON rcccf.token = ra.case_token
+    ON rcccf.token = ra.target_token
 )
   , cash_card_entered_06 AS (
   SELECT
