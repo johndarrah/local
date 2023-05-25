@@ -71,7 +71,7 @@ WITH
     ON ut.touch_end_time::DATE = d.dt
     AND ut.source IN ('cfone', 'awc', 'notary')
   JOIN app_datamart_cco.public.team_queue_catalog tqc
-    ON ut.last_assigned_queue_id = tqc.queue_id
+    ON lower(ut.queue_name) = lower(tqc.queue_name)
 )
   , cfone_entered_01 AS (
   SELECT
