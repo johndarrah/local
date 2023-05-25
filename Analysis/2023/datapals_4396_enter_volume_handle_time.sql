@@ -4,19 +4,19 @@
 -- description:
 -- Case volume and handle times for CS & Risk cases.
 -- Note that not all the risk cases have handle time.
--- If the case lives outside of CF1 or Notary then the handle time isn't calculated.
--- This may be because of the process for how the case is handled or limitations on what fields are available.
+-- Generally, if the case lives outside of CF1 or Notary then the handle time isn't calculated.
+-- This may be because of the process for how the case is handled (i.e. worked in Google sheets) or limitations on what fields are available.
 
--- -- risk sources:
--- -- most trusted source: app_cash_cs.public.combined_risk_daily_volume
--- -- regulator cases: https://squarewave.sqprod.co/#/jobs/13232/sql
--- -- cash card customizations: https://github.com/squareup/app-datamart-cco/blob/main/jobs/cash_card_customizations/cash_card_customizations.sql
--- -- banking_risk_performance: https://squarewave.sqprod.co/#/jobs/12355/sql
+-- risk sources:
+-- most trusted source: app_cash_cs.public.combined_risk_daily_volume
+-- regulator cases: https://squarewave.sqprod.co/#/jobs/13232/sql
+-- cash card customizations: https://github.com/squareup/app-datamart-cco/blob/main/jobs/cash_card_customizations/cash_card_customizations.sql
+-- banking_risk_performance: https://squarewave.sqprod.co/#/jobs/12355/sql
 
--- -- non-risk sources:
--- -- cf1 views: https://github.com/squareup/app-datamart-cco/tree/main/jobs/cf1_touches_views
--- -- sfdc cf1 views: https://github.com/squareup/app-datamart-cco/tree/main/jobs/sfdc_cf1_touches
--- -- notary views: https://github.com/squareup/app-datamart-cco/blob/main/jobs/notary_views/notary_views.sql
+-- non-risk sources:
+-- cf1 views: https://github.com/squareup/app-datamart-cco/tree/main/jobs/cf1_touches_views
+-- sfdc cf1 views: https://github.com/squareup/app-datamart-cco/tree/main/jobs/sfdc_cf1_touches
+-- notary views: https://github.com/squareup/app-datamart-cco/blob/main/jobs/notary_views/notary_views.sql
 
 
 -- CREATE OR REPLACE TABLE personal_johndarrah.public.touch_analysis_2023_05_22 AS
