@@ -14,6 +14,7 @@ WITH
     SELECT
       TIME_SLICE(e.touch_start_time, 30, 'minute')                   AS touch_30_ts_utc
       , CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', e.touch_time) AS touch_30_ts_pst
+      , e.queue_name
       , e.queue_id
       , COUNT(DISTINCT touch_id)                                     AS handled_volume
       , COUNT(DISTINCT CASE
