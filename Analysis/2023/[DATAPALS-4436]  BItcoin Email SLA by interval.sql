@@ -9,7 +9,7 @@
 WITH
   handled_agg AS (
     SELECT
-      TIME_SLICE(touch_time, 30, 'minute')                AS touch_30_ts
+      TIME_SLICE(e.touch_time, 30, 'minute')                AS touch_30_ts
       , e.queue_name
       , e.queue_id
       , q.communication_channel                           AS channel
@@ -80,5 +80,4 @@ WHERE
   AND response_handled > 0
 GROUP BY 1, 2
 ORDER BY 1 DESC
-
 ;
