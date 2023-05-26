@@ -5,6 +5,9 @@
 -- looker
 -- https://square.cloud.looker.com/explore/Support/cash_daily_queue_volumes?qid=AR6l2wjfFLMm7IWNNCsHhh&origin_space=11017&toggle=fil
 
+-- notes
+-- "touch time" is the end of the touch, "touch start time" is the start of the touch
+
 
 WITH
   handled_agg AS (
