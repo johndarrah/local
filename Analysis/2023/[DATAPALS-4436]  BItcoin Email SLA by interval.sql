@@ -65,7 +65,7 @@ WITH
       ON q.queue_id = e.queue_id
     WHERE
       YEAR(touch_30_ts) = 2023
-      AND e.queue_name IN ('Square Cash Support Bitcoin Queue', 'Bitcoin IDV', '[BITCOIN]')
+      AND e.queue_name IN ('CS Crypto')
     GROUP BY 1, 2, 3, 4, 5, 6
   )
 SELECT
