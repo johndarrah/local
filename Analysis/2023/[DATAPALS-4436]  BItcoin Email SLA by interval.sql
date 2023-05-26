@@ -9,7 +9,7 @@
 WITH
   handled_agg AS (
     SELECT
-      TIME_SLICE(e.touch_time, 30, 'minute')                   AS touch_30_ts_utc
+      TIME_SLICE(e.touch_start_time, 30, 'minute')                   AS touch_30_ts_utc
       , CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', e.touch_time) AS touch_30_ts_pst
       , e.queue_name
       , e.queue_id
@@ -62,7 +62,7 @@ WITH
   )
 SELECT
   touch_30_ts_utc
---   , touch_30_ts_pst
+  --   , touch_30_ts_pst
   , queue_name
   , SUM(response_handled)                                          AS response_volume
   , SUM(handled_in_sl)                                             AS handled_volume
