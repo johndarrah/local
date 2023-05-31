@@ -176,7 +176,7 @@ WITH
       AND e.employee_id = h.employee_id
   )
 SELECT *
-FROM messaging_final --test
+FROM messaging_final
 UNION
 SELECT *
 FROM ast_rd_final
