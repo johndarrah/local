@@ -223,13 +223,16 @@ WITH
   -- regulator: determines the type of banking fraud is coming
   , banking_hashtag_handled_05 AS (
   SELECT
-    d.dt                                        AS dt
-    , bh.primary_key                            AS case_id
-    , 'internal transfer'                       AS channel
-    , 'banking_hashtag'                         AS source
-    , 'app_cash_cs.public.banking_hashtags'     AS data_source
-    , '[No Handle Time] Remote Deposit Capture' AS classification
-    , NULL                                      AS handle_time
+    d.dt                                    AS dt
+    , bh.primary_key                        AS case_id
+    , 'internal transfer'                   AS channel
+    , 'banking_hashtag'                     AS source
+    , 'app_cash_cs.public.banking_hashtags' AS data_source
+    , IFF(ra.handled_seconds IS NULL,
+          '[No Handle Time] Remote Deposit Capture',
+          'Remote Deposit Capture'
+    )                                       AS classification
+    , ra.handled_seconds                    AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.banking_hashtags bh
     ON d.dt = bh.hashtag_at
@@ -245,8 +248,11 @@ WITH
     , 'cash_card_customization'                              AS source
     , 'app_cash_cs.public.risk_cash_card_customization_fact' AS data_source
     -- entering_ccs
-    , '[No Handle Time] AR'                                  AS classification
-    , NULL                                                   AS handle_time
+    , IFF(ra.handled_seconds IS NULL,
+          '[No Handle Time] AR',
+          'AR'
+    )                                                        AS classification
+    , ra.handled_seconds                                     AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.risk_cash_card_customization_fact rcccf
     ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', rcccf.review_completed_at_pt)
