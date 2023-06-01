@@ -58,7 +58,7 @@ WITH
   FROM regulator_base
     PIVOT (MAX(created_at) FOR logical_event_name IN ('CREATE_CASE','ASSIGN' , 'CLOSED_COMPLETE')) AS p
 )
-  , handled_messaging_email_voice_01 AS (
+  , handled_messaging_email_01 AS (
   SELECT
     d.dt                                          AS dt
     , ut.case_id                                  AS case_id
@@ -132,14 +132,12 @@ WITH
   FROM dt d
   JOIN app_datamart_cco.public.universal_touches ut
     ON ut.touch_start_time::DATE = d.dt
-    AND ut.source IN ('cfone', 'awc')
-  JOIN app_datamart_cco.public.team_queue_catalog tqc
-    ON LOWER(ut.last_assigned_queue_id) = LOWER(tqc.queue_id)
+    AND ut.source = 'cfone'
   LEFT JOIN app_cash_cs.public.support_cases sc
     ON ut.case_id = sc.case_id
   WHERE
     1 = 1
-    AND NVL(ut.channel, sc.origin) != 'Twitter'
+    AND NVL(ut.channel, sc.origin) NOT IN ('Twitter', 'Phone')
 )
   , didv_handled_02 AS (
   SELECT
@@ -219,8 +217,6 @@ WITH
   FROM dt d
   JOIN app_cash_cs.public.banking_risk_performance brp
     ON brp.report_date = d.dt
-  LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
-    ON LOWER(brp.case_type) = LOWER(tqc.queue_name)
 )
   -- regulator: determines the type of banking fraud is coming
   , banking_hashtag_handled_05 AS (
@@ -274,6 +270,23 @@ WITH
   JOIN app_cash_cs.public.sprinklr_cases sc
     ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', sc.created_time_pt)::DATE
 )
+  , voice_handled_08 AS (
+  SELECT
+    d.dt                                 AS dt
+    , cr.contact_id                      AS case_id
+    , NULL                               AS channel
+    , 'Voice'                            AS source
+    , 'app_cash_cs.preprod.call_records' AS data_source
+    , 'Voice'                            AS classification
+    , cr.handle_time                     AS handle_time
+  FROM dt d
+  JOIN app_cash_cs.preprod.call_records cr
+    ON d.dt = cr.case_created_date
+  WHERE
+    1 = 1
+    AND NOT cr.out_of_hours
+    AND cr.is_handled
+)
   , handled_volume AS (
   SELECT
     dt
@@ -283,7 +296,7 @@ WITH
     , data_source
     , classification
     , handle_time
-  FROM handled_messaging_email_voice_01
+  FROM handled_messaging_email_01
 
   UNION ALL
 
@@ -356,6 +369,18 @@ WITH
     , classification
     , handle_time
   FROM social_handled_07
+
+  UNION ALL
+
+  SELECT
+    dt
+    , case_id
+    , channel
+    , source
+    , data_source
+    , classification
+    , handle_time
+  FROM voice_handled_08
 )
 
 SELECT
