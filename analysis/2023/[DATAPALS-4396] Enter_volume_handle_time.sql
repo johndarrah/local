@@ -347,44 +347,44 @@ WITH
   FROM social_handled_07
 )
 
-  -- SELECT
-  --   DATE_TRUNC(MONTH, hv.dt)   AS month_dt
-  --   , IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
-  --         TRIM(SUBSTR(hv.classification, 17, LEN(hv.classification))),
-  --         hv.classification
-  --   )                          AS classification
-  --   --   , hv.classification
-  --   , COUNT(DISTINCT
-  --           IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
-  --               case_id,
-  --               NULL
-  --             )
-  --   )                          AS entering_volume_no_ht
-  --   , COUNT(DISTINCT
-  --           IFF(LEFT(hv.classification, 17) != '[No Handle Time] ',
-  --               case_id,
-  --               NULL
-  --             )
-  --   )                          AS entering_volume_with_ht
-  --   , COUNT(DISTINCT case_id)  AS total_entering_volume
-  --   , SUM(hv.handle_time) / 60 AS handle_time_minutes
-  -- FROM handled_volume hv
-  -- WHERE
-  --   1 = 1
-  --   AND classification ILIKE '%AR%'
-  -- GROUP BY 1, 2
-  -- ORDER BY 1 DESC, 2
-  -- ;
-
-  -- -- -- Quality Checks
-  -- -- check that classifications are valid
-SELECT DISTINCT
-  classification
-  , source
-  , data_source
+  SELECT
+    DATE_TRUNC(MONTH, hv.dt)   AS month_dt
+    , IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
+          TRIM(SUBSTR(hv.classification, 17, LEN(hv.classification))),
+          hv.classification
+    )                          AS classification
+    --   , hv.classification
+    , COUNT(DISTINCT
+            IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
+                case_id,
+                NULL
+              )
+    )                          AS entering_volume_no_ht
+    , COUNT(DISTINCT
+            IFF(LEFT(hv.classification, 17) != '[No Handle Time] ',
+                case_id,
+                NULL
+              )
+    )                          AS entering_volume_with_ht
+    , COUNT(DISTINCT case_id)  AS total_entering_volume
+    , SUM(hv.handle_time) / 60 AS handle_time_minutes
 FROM handled_volume hv
 WHERE
   1 = 1
+  AND classification ILIKE '%AR%'
+GROUP BY 1, 2
+ORDER BY 1 DESC, 2
+;
+
+  -- -- -- Quality Checks
+  -- -- check that classifications are valid
+-- SELECT DISTINCT
+--   classification
+--   , source
+--   , data_source
+-- FROM handled_volume hv
+-- WHERE
+--   1 = 1
 --   AND source NOT IN ('cfone', 'awc')
 -- -- duplicate entering
 -- SELECT *
