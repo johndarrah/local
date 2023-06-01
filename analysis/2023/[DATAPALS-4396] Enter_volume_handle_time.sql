@@ -122,7 +122,13 @@ WITH
           THEN 'Remote Deposit Capture'
         WHEN ut.channel = 'Chat'
           THEN 'Messaging'
-        ELSE ut.channel
+        WHEN NVL(ut.channel, sc.origin) = 'Twitter'
+          THEN 'Social'
+        WHEN NVL(ut.channel, sc.origin) = 'Apparel'
+          THEN 'Apparel'
+        WHEN NVL(ut.channel, sc.origin) IS NULL
+          THEN 'Messaging'
+        ELSE NVL(ut.channel, sc.origin)
       END                                         AS classification
     , ut.handle_time                              AS handle_time
   FROM dt d
@@ -131,6 +137,8 @@ WITH
     AND ut.source IN ('cfone', 'awc')
   JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(ut.last_assigned_queue_id) = LOWER(tqc.queue_id)
+  LEFT JOIN app_cash_cs.public.support_cases sc
+    ON ut.case_id = sc.case_id
 )
   , didv_handled_02 AS (
   SELECT
@@ -177,9 +185,9 @@ WITH
         THEN 'Remote Deposit Capture'
       WHEN naq.queue ILIKE '%idv%'
         THEN 'AR'
-      WHEN naq.queue ILIKE '%appeals%'
-        THEN 'Appeals'
-      ELSE naq.queue
+      WHEN naq.queue = 'rdc_returns_rars'
+        THEN 'Remote Deposit Capture'
+      ELSE 'AR'
     END                                             AS classification
     , naq.handled_minutes                           AS handle_time
   FROM dt d
@@ -253,7 +261,7 @@ WITH
     , NULL                                 AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.sprinklr_cases sc
-    ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', sc.created_time_pt)
+    ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', sc.created_time_pt)::DATE
 )
   , handled_volume AS (
   SELECT
@@ -338,45 +346,46 @@ WITH
     , handle_time
   FROM social_handled_07
 )
+
+  -- SELECT
+  --   DATE_TRUNC(MONTH, hv.dt)   AS month_dt
+  --   , IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
+  --         TRIM(SUBSTR(hv.classification, 17, LEN(hv.classification))),
+  --         hv.classification
+  --   )                          AS classification
+  --   --   , hv.classification
+  --   , COUNT(DISTINCT
+  --           IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
+  --               case_id,
+  --               NULL
+  --             )
+  --   )                          AS entering_volume_no_ht
+  --   , COUNT(DISTINCT
+  --           IFF(LEFT(hv.classification, 17) != '[No Handle Time] ',
+  --               case_id,
+  --               NULL
+  --             )
+  --   )                          AS entering_volume_with_ht
+  --   , COUNT(DISTINCT case_id)  AS total_entering_volume
+  --   , SUM(hv.handle_time) / 60 AS handle_time_minutes
+  -- FROM handled_volume hv
+  -- WHERE
+  --   1 = 1
+  --   AND classification ILIKE '%AR%'
+  -- GROUP BY 1, 2
+  -- ORDER BY 1 DESC, 2
+  -- ;
+
+  -- -- -- Quality Checks
+  -- -- check that classifications are valid
 SELECT DISTINCT
   classification
   , source
   , data_source
 FROM handled_volume hv
 WHERE
-  source NOT IN ('cfone', 'awc')
-
-
--- SELECT
---   DATE_TRUNC(MONTH, hv.dt)   AS month_dt
---   , IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
---         TRIM(SUBSTR(hv.classification, 17, LEN(hv.classification))),
---         hv.classification
---   )                          AS classification
---   --   , hv.classification
---   , COUNT(DISTINCT
---           IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
---               case_id,
---               NULL
---             )
---   )                          AS entering_volume_no_ht
---   , COUNT(DISTINCT
---           IFF(LEFT(hv.classification, 17) != '[No Handle Time] ',
---               case_id,
---               NULL
---             )
---   )                          AS entering_volume_with_ht
---   , COUNT(DISTINCT case_id)  AS total_entering_volume
---   , SUM(hv.handle_time) / 60 AS handle_time_minutes
--- FROM handled_volume hv
--- WHERE
---   1 = 1
---   AND classification ILIKE '%AR%'
--- GROUP BY 1, 2
--- ORDER BY 1 DESC, 2
-;
-
--- -- -- Quality Checks
+  1 = 1
+--   AND source NOT IN ('cfone', 'awc')
 -- -- duplicate entering
 -- SELECT *
 -- FROM entered_sources
