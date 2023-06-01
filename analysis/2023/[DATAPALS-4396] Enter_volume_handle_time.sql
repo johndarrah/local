@@ -188,6 +188,8 @@ WITH
         THEN 'AR'
       WHEN naq.queue = 'rdc_returns_rars'
         THEN 'Remote Deposit Capture'
+      WHEN naq.queue = 'TRANSACTION_MONITORING'
+        THEN 'Banking Fraud'
       ELSE 'AR'
     END                                             AS classification
     , naq.handled_minutes                           AS handle_time
