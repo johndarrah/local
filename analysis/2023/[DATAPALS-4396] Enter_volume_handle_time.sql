@@ -190,14 +190,14 @@ WITH
         THEN 'Remote Deposit Capture'
       WHEN naq.queue = 'TRANSACTION_MONITORING'
         THEN 'Banking Fraud'
-      ELSE 'AR'
+      ELSE NULL
     END                                             AS classification
     , naq.handled_minutes                           AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.notary_assignments_queue naq
     ON d.dt = naq.claimed_at::DATE
   WHERE
-    naq.queue != 'spacing_guild' -- fake queue
+    classification IS NOT NULL
   QUALIFY
     ROW_NUMBER() OVER ( PARTITION BY naq.assignment_id ORDER BY naq.occurred_at) = 1
 )
