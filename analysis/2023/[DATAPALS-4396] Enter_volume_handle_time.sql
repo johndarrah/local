@@ -131,7 +131,7 @@ WITH
     , ut.handle_time                              AS handle_time
   FROM dt d
   JOIN app_datamart_cco.public.universal_touches ut
-    ON ut.touch_start_time::DATE = d.dt
+    ON ut.created_at::DATE = d.dt
     AND ut.source = 'cfone'
   LEFT JOIN app_cash_cs.public.support_cases sc
     ON ut.case_id = sc.case_id
