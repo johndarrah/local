@@ -122,8 +122,6 @@ WITH
           THEN 'Remote Deposit Capture'
         WHEN ut.channel = 'Chat'
           THEN 'Messaging'
-        WHEN NVL(ut.channel, sc.origin) = 'Twitter'
-          THEN 'Social'
         WHEN NVL(ut.channel, sc.origin) = 'Apparel'
           THEN 'Apparel'
         WHEN NVL(ut.channel, sc.origin) IS NULL
@@ -139,6 +137,9 @@ WITH
     ON LOWER(ut.last_assigned_queue_id) = LOWER(tqc.queue_id)
   LEFT JOIN app_cash_cs.public.support_cases sc
     ON ut.case_id = sc.case_id
+  WHERE
+    1 = 1
+    AND NVL(ut.channel, sc.origin) != 'Twitter'
 )
   , didv_handled_02 AS (
   SELECT
@@ -193,6 +194,8 @@ WITH
   FROM dt d
   JOIN app_cash_cs.public.notary_assignments_queue naq
     ON d.dt = naq.claimed_at::DATE
+  WHERE
+    naq.queue != 'spacing_guild' -- fake queue
   QUALIFY
     ROW_NUMBER() OVER ( PARTITION BY naq.assignment_id ORDER BY naq.occurred_at) = 1
 )
