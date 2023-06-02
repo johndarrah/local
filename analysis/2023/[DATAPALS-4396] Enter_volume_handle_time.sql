@@ -193,7 +193,7 @@ WITH
     , naq.handled_minutes                           AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.notary_assignments_queue naq
-    ON d.dt = naq.claimed_at::DATE
+    ON d.dt = naq.occurred_at::DATE
   WHERE
     classification IS NOT NULL
   QUALIFY
@@ -216,7 +216,7 @@ WITH
     , NULL                                          AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.banking_risk_performance brp
-    ON brp.report_date = d.dt
+    ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', brp.created_date_pst)
 )
   -- regulator: determines the type of banking fraud is coming
   , banking_hashtag_handled_05 AS (
@@ -253,7 +253,7 @@ WITH
     , ra.handled_seconds                                     AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.risk_cash_card_customization_fact rcccf
-    ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', rcccf.review_completed_at_pt)
+    ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', rcccf.created_at_pt)
   LEFT JOIN regulator_agg ra
     ON rcccf.token = ra.target_token
 )
