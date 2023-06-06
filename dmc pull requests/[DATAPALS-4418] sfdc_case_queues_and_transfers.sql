@@ -10,7 +10,7 @@ Change Log:
 For more details on the updates by @blucero check out the Confluence page https://wiki.sqprod.co/display/ISWIKI/Optimized+ETL+-+Cases%2C+Queues+and+Transfers
 03/02/2023: @ianpeck changed meta.yaml to be tolerant of stale data. Job runs every 30 minutes so it should not cause any problems at all.
 
--- test
+
 Current State: In Production
 Date Changed: 11/09/2020
 Timezone: PST
