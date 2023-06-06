@@ -14,17 +14,18 @@ SELECT
 FROM app_cash_cs.cfone.time_by_users tbu
 JOIN app_cash_cs.public.support_cases sc
   ON tbu.case_id = sc.case_id
+LEFT JOIN app_datamart_cco.sfdc_cfone.users u
+  ON tbu.user_id = u.id
 LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
-  ON TO_VARCHAR(tbu.user_id) = TO_VARCHAR(ecd.employee_id)
+  ON LOWER(u.email) = LOWER(ecd.email_today)
+  AND ecd.role_status = 'Current'
 WHERE
   1 = 1
   AND tbu.case_id = '5005w00002DjHuMAAV'
-QUALIFY
-  ROW_NUMBER() OVER (PARTITION BY ecd.employee_id ORDER BY created_date DESC) = 1 -- latest record
 ORDER BY tbu.start_timestamp
 ;
 
-SELECT
-  touch_start_time
-  , TIME_SLICE(touch_start_time, 30, 'MINUTE') AS interval_timestamp
-FROM app_cash_cs.public.email_touches
+SELECT *
+FROM app_datamart_cco.sfdc_cfone.users
+;
+
