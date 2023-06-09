@@ -327,7 +327,7 @@ WITH
     dt
     , case_id
     , touch_id
-    , origin
+    , channel
     , source
     , data_source
     , classification
@@ -340,7 +340,7 @@ WITH
     dt
     , case_id
     , touch_id
-    , origin
+    , channel
     , source
     , data_source
     , classification
@@ -353,7 +353,7 @@ WITH
     dt
     , case_id
     , touch_id
-    , origin
+    , channel
     , source
     , data_source
     , classification
@@ -366,7 +366,7 @@ WITH
     dt
     , case_id
     , touch_id
-    , origin
+    , channel
     , source
     , data_source
     , classification
@@ -379,7 +379,7 @@ WITH
     dt
     , case_id
     , touch_id
-    , origin
+    , channel
     , source
     , data_source
     , classification
@@ -392,7 +392,7 @@ WITH
     dt
     , case_id
     , touch_id
-    , origin
+    , channel
     , source
     , data_source
     , classification
