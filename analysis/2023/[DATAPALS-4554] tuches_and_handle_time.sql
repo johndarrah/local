@@ -62,71 +62,72 @@ WITH
   SELECT
     d.dt                                          AS dt
     , ut.case_id                                  AS case_id
+    , cfone_touch_id                              AS touch_id
     , sc.origin                                   AS origin
     , ut.source                                   AS source
     , 'app_datamart_cco.public.universal_touches' AS data_source
     , CASE
     --  entered_midv
-        WHEN sc.first_assigned_queue ILIKE ANY ('%Bitcoin IDV%',
-                                                '%IDV Florida Limits%',
-                                                '%IDV Manual Verification%',
-                                                '%Compliance Review%')
+        WHEN ut.queue_name ILIKE ANY ('%Bitcoin IDV%',
+                                      '%IDV Florida Limits%',
+                                      '%IDV Manual Verification%',
+                                      '%Compliance Review%')
           THEN 'AR'
     --  entered_evmanual
-        WHEN sc.first_assigned_queue ILIKE '%Risk EV Manual Verification%'
+        WHEN ut.queue_name ILIKE '%Risk EV Manual Verification%'
           THEN 'AR'
     --  entered_emailato, entered_messagingato
-        WHEN sc.first_assigned_queue ILIKE ANY ('Risk ATO',
-                                                'Risk ATO Voice',
-                                                'ATO Brokerage and Lending',
-                                                '%Messaging Risk ATO Specialty%')
+        WHEN ut.queue_name ILIKE ANY ('Risk ATO',
+                                      'Risk ATO Voice',
+                                      'ATO Brokerage and Lending',
+                                      '%Messaging Risk ATO Specialty%')
           THEN 'ATO'
     -- entered_capdisputes
-        WHEN sc.first_assigned_queue ILIKE '%Cash App Pay Disputes%'
+        WHEN ut.queue_name ILIKE '%Cash App Pay Disputes%'
           THEN 'Disputes'
     -- entered_disputescashcard
-        WHEN sc.first_assigned_queue ILIKE '%Disputes Cash Card%'
+        WHEN ut.queue_name ILIKE '%Disputes Cash Card%'
           THEN 'Disputes'
     -- entered_disputesp2p
-        WHEN sc.first_assigned_queue ILIKE '%Disputes P2P%'
+        WHEN ut.queue_name ILIKE '%Disputes P2P%'
           THEN 'Disputes'
     -- entered_disputesserviceclaim
-        WHEN sc.first_assigned_queue ILIKE '%Disputes Service Claim%'
+        WHEN ut.queue_name ILIKE '%Disputes Service Claim%'
           THEN 'Disputes'
     -- entered_prioritydisputes
-        WHEN sc.first_assigned_queue ILIKE '%Priority Disputes%'
+        WHEN ut.queue_name ILIKE '%Priority Disputes%'
           THEN 'Disputes'
     -- entered_disputesspecialty
-        WHEN sc.first_assigned_queue ILIKE '%Disputes Specialty%'
+        WHEN ut.queue_name ILIKE '%Disputes Specialty%'
           THEN 'Disputes'
     -- entered_claimdocs
-        WHEN sc.first_assigned_queue ILIKE '%Claim Docs%'
+        WHEN ut.queue_name ILIKE '%Claim Docs%'
           THEN 'Disputes'
     -- entered_mobilecheckdeposits
-        WHEN sc.first_assigned_queue ILIKE '%Mobile Check Deposits%'
+        WHEN ut.queue_name ILIKE '%Mobile Check Deposits%'
           THEN 'Remote Deposit Capture'
     -- entered_bankingcfone
-        WHEN sc.first_assigned_queue ILIKE '%Banking%'
+        WHEN ut.queue_name ILIKE '%Banking%'
           THEN 'Banking'
     -- entered_papermoney
-        WHEN sc.first_assigned_queue ILIKE '%Risk: Paper Money%'
+        WHEN ut.queue_name ILIKE '%Risk: Paper Money%'
           THEN 'Banking'
     -- entered_missdep
-        WHEN sc.first_assigned_queue ILIKE '%Missing Deposits%'
+        WHEN ut.queue_name ILIKE '%Missing Deposits%'
           THEN 'Remote Deposit Capture'
     -- entered_ccsuspend
-        WHEN sc.first_assigned_queue ILIKE '%Cash Card Suspension%'
+        WHEN ut.queue_name ILIKE '%Cash Card Suspension%'
           THEN 'Banking'
     -- entered_r06
-        WHEN sc.first_assigned_queue ILIKE '%Standard Deposit R06 and Reversal%'
+        WHEN ut.queue_name ILIKE '%Standard Deposit R06 and Reversal%'
           THEN 'Remote Deposit Capture'
-        WHEN sc.origin = 'Chat'
+        WHEN ut.channel = 'Chat'
           THEN 'Messaging'
-        WHEN sc.origin = 'Apparel'
+        WHEN NVL(ut.channel, sc.origin) = 'Apparel'
           THEN 'Apparel'
-        WHEN sc.origin IS NULL
+        WHEN NVL(ut.channel, sc.origin) IS NULL
           THEN 'Messaging'
-        ELSE sc.origin
+        ELSE NVL(ut.channel, sc.origin)
       END                                         AS classification
     , ut.handle_time                              AS handle_time
   FROM dt d
@@ -144,7 +145,8 @@ WITH
   SELECT
     d.dt                                 AS dt
     , rif.token::STRING                  AS case_id
-    , NULL                               AS origin
+    , rif.token::STRING                  AS touch_id
+    , NULL                               AS channel
     , 'idv'                              AS source
     , 'app_cash_cs.public.risk_idv_fact' AS data_source
     -- entered_didv
@@ -160,7 +162,8 @@ WITH
   SELECT DISTINCT
     d.dt                                            AS dt
     , naq.assignment_id                             AS case_id
-    , NULL                                          AS origin
+    , naq.assignment_id                             AS touch_id
+    , NULL                                          AS channel
     , 'notary'                                      AS source
     , 'app_cash_cs.public.notary_assignments_queue' AS data_source
     , IFF(naq.handled_minutes IS NULL, '[No Handle Time] ', '') ||
@@ -204,7 +207,8 @@ WITH
   SELECT
     d.dt                                            AS dt
     , brp.case_id                                   AS case_id
-    , 'internal transfer'                           AS origin
+    , brp.case_id                                   AS touch_id
+    , 'internal transfer'                           AS channel
     , 'banking_risk'                                AS source
     , 'app_cash_cs.public.banking_risk_performance' AS data_source
     , CASE
@@ -224,7 +228,8 @@ WITH
   SELECT
     d.dt                                    AS dt
     , bh.primary_key                        AS case_id
-    , 'internal transfer'                   AS origin
+    , bh.primary_key                        AS touch_id
+    , 'internal transfer'                   AS channel
     , 'banking_hashtag'                     AS source
     , 'app_cash_cs.public.banking_hashtags' AS data_source
     , IFF(ra.handled_seconds IS NULL,
@@ -243,7 +248,8 @@ WITH
   SELECT
     d.dt                                                     AS dt
     , rcccf.customer_token::STRING                           AS case_id
-    , NULL                                                   AS origin
+    , rcccf.customer_token::STRING                           AS touch_id
+    , NULL                                                   AS channel
     , 'cash_card_customization'                              AS source
     , 'app_cash_cs.public.risk_cash_card_customization_fact' AS data_source
     -- entering_ccs
@@ -262,7 +268,8 @@ WITH
   SELECT
     d.dt                                   AS dt
     , sc.sprinklr_case_id::STRING          AS case_id
-    , sc.channel_type                      AS origin
+    , sc.sprinklr_case_id::STRING          AS touch_id
+    , sc.channel_type                      AS channel
     , 'Social'                             AS source
     , 'app_cash_cs.public.sprinklr_cases ' AS data_source
     , '[No Handle Time] Social'            AS classification
@@ -275,7 +282,8 @@ WITH
   SELECT
     d.dt                                 AS dt
     , cr.contact_id                      AS case_id
-    , NULL                               AS origin
+    , cr.contact_id                      AS touch_id
+    , NULL                               AS channel
     , 'Voice'                            AS source
     , 'app_cash_cs.preprod.call_records' AS data_source
     , 'Voice'                            AS classification
@@ -292,6 +300,7 @@ WITH
   SELECT
     dt
     , case_id
+    , touch_id
     , origin
     , source
     , data_source
@@ -304,7 +313,8 @@ WITH
   SELECT
     dt
     , case_id
-    , origin
+    , touch_id
+    , channel
     , source
     , data_source
     , classification
@@ -316,6 +326,7 @@ WITH
   SELECT
     dt
     , case_id
+    , touch_id
     , origin
     , source
     , data_source
@@ -328,6 +339,7 @@ WITH
   SELECT
     dt
     , case_id
+    , touch_id
     , origin
     , source
     , data_source
@@ -340,6 +352,7 @@ WITH
   SELECT
     dt
     , case_id
+    , touch_id
     , origin
     , source
     , data_source
@@ -352,6 +365,7 @@ WITH
   SELECT
     dt
     , case_id
+    , touch_id
     , origin
     , source
     , data_source
@@ -364,6 +378,7 @@ WITH
   SELECT
     dt
     , case_id
+    , touch_id
     , origin
     , source
     , data_source
@@ -376,6 +391,7 @@ WITH
   SELECT
     dt
     , case_id
+    , touch_id
     , origin
     , source
     , data_source
@@ -396,14 +412,14 @@ SELECT
               case_id,
               NULL
             )
-  )                          AS entering_volume_without_ht
+  )                          AS touches_without_ht
   , COUNT(DISTINCT
           IFF(LEFT(hv.classification, 17) != '[No Handle Time] ',
               case_id,
               NULL
             )
-  )                          AS entering_volume_with_ht
-  , COUNT(DISTINCT case_id)  AS total_entering_volume
+  )                          AS touches_with_ht
+  , COUNT(DISTINCT touch_id) AS total_touches
   , SUM(hv.handle_time) / 60 AS handle_time_minutes
 FROM handled_volume hv
 WHERE
