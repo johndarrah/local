@@ -1,15 +1,13 @@
 -- author: john darrah
 -- ticket: datapals-4396
--- 
 
 -- description:
 -- Case volume and handle times for CS & Risk cases based on origin and first queue assigned (for risk)
--- Note that not all the risk cases have handle time.
--- Generally, if the case lives outside of CF1 or Notary then the handle time isn't calculated.
--- This may be because of the process for how the case is handled (i.e. worked in Google sheets) or limitations on what fields are available.
--- teams will be based on the last queue assigned
--- Names above team_names will be references to what's in app_datemart_cco.public.risk_daily_volume
-
+-- Case touches and handle times for CS & Risk cases based on origin and the queue the touch ocurred in (for risk)
+-- Not all risk cases have handle time.
+-- Natary touches need to be classified so universal touches won't work
+-- Generally, if the case lives outside of CF1 or Notary then the handle time isn't calculated (processes, tool limitations, etc.)
+-- For risk, the names above classification will be references to what's in app_datemart_cco.public.risk_daily_volume
 
 -- risk sources:
 -- most trusted source: https://github.com/squareup/app-datamart-cco/blob/main/jobs/combined_risk_daily_volume/combined_risk_daily_volume.sql
