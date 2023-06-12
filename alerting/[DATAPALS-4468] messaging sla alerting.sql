@@ -6,13 +6,17 @@
 -- glossary: https://wiki.sqprod.co/display/ISWIKI/CCO+Metrics+Definitions#CCOMetricsDefinitions-MESSAGINGMETRICS
 
 -- Notes
--- business_unit is derived from app_datamart_cco.public.team_queue_catalog
 -- to identify touches coming in when there is a backlgo: mt.backlog_handled
 -- -- must be handled
 -- -- touch start time != assignment time
 -- -- customer contact was not during business hours
--- app_cash_cs.public.live_agent_chat_escalations is this in UT
+-- app_cash_cs.public.live_agent_chat_escalations in UT but we don't have enough data to parse them out
 
+-- action items
+-- For handle time and touches, we're switching to Universal Touches
+-- -- I've found a few issues with app_cash_cs.preprod.messaging_touches and DMC has voiced to me that they plan on only fixing UT moving forward
+-- The volume and SLA's will be when the touch occurred, not when it was assigned
+-- -- the assignment date is based on when the case goes from the queue to the advocate
 WITH
   entering_message_touches AS (
     SELECT
@@ -30,16 +34,20 @@ WITH
       AND ut.touch_start_time::DATE BETWEEN ecd.start_date AND ecd.end_date
     LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc -- feedback add this to ut
       ON LOWER(ut.queue_name) = LOWER(tqc.queue_name)
+    LEFT JOIN app_cash_cs.public.live_agent_chat_escalations lace
+      ON ut.case_id = lace.parent_case_id
     WHERE
       YEAR(ut.touch_start_time) >= '2022' --note that some chats may be resolved without interaction
       AND NVL(LOWER(tqc.business_unit_name), 'other') -- expand editor window
       IN ('customer success - specialty', 'customer success - core', 'other')
+      AND lace.parent_case_id IS NULL     -- exclude live agent
       AND ecd.employee_id = '40706'
     GROUP BY 1, 2, 3, 4, 5, 6, 7
   )
   , handled_messaging_touches AS (
   SELECT
-    ut.touch_assignment_time::DATE                                       AS handled_date_pt
+    ut.touch_start_time::DATE                                            AS handled_date_pt
+    , ut.advocate_id
     , ecd.employee_id
     , ecd.full_name
     , ecd.city
@@ -55,21 +63,24 @@ WITH
               ELSE NULL
             END)                                                         AS touches_in_sla
     , COUNT(DISTINCT IFF(ut.in_business_hours, ut.cfone_touch_id, NULL)) AS qualified_sla_touches
-    , touches_in_sla / qualified_sla_touches * 100                       AS percent_touches_in_sla
+    , touches_in_sla / NULLIFZERO(qualified_sla_touches) * 100           AS percent_touches_in_sla
     , SUM(IFF(ut.in_business_hours, ut.response_time / 60, NULL))        AS response_time_min
     , SUM(ut.handle_time) / 60                                           AS handle_time_min
   FROM app_datamart_cco.public.universal_touches ut
-  JOIN app_cash_cs.public.employee_cash_dim ecd
+  LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
     ON ut.advocate_id = ecd.cfone_id_today
     AND ut.touch_assignment_time::DATE BETWEEN ecd.start_date AND ecd.end_date
   LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(ut.queue_name) = LOWER(tqc.queue_name)
+  LEFT JOIN app_cash_cs.public.live_agent_chat_escalations lace
+    ON ut.case_id = lace.parent_case_id
   WHERE
     1 = 1
     AND NVL(LOWER(tqc.business_unit_name), 'other') -- expand editor window
     IN ('customer success - specialty', 'customer success - core', 'other')
     AND ecd.employee_id = '40706'
-  GROUP BY 1, 2, 3, 4, 5, 6, 7
+    AND lace.parent_case_id IS NULL -- exclude live agent
+  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
 )
   , messaging_touches_final AS (
   SELECT
@@ -107,8 +118,8 @@ WITH
     , COUNT(DISTINCT chat_transcript_id)             AS entering_touches
   FROM app_cash_cs.public.live_agent_chat_escalations
   WHERE
-    chat_record_type IN ('RD Chat', 'Internal Advocate Success')
-    AND YEAR(chat_created_at) >= '2022'
+    YEAR(chat_created_at) >= '2022'
+    AND chat_record_type IN ('RD Chat', 'Internal Advocate Success')
   GROUP BY 1, 2, 3, 4, 5, 6
 )
   , handled_rd_ast_touches AS (
@@ -150,8 +161,8 @@ WITH
     , touches_in_sla / qualified_sla_touches * 100   AS percent_touches_in_sla
   FROM app_cash_cs.public.live_agent_chat_escalations
   WHERE
-    chat_record_type IN ('RD Chat', 'Internal Advocate Success')
-    AND YEAR(chat_created_at) >= '2022'
+    YEAR(chat_created_at) >= '2022'
+    AND chat_record_type IN ('RD Chat', 'Internal Advocate Success')
   GROUP BY 1, 2, 3, 4, 5, 6
 )
   , ast_rd_touches_final AS (
@@ -175,11 +186,9 @@ WITH
     ON e.entering_date_pt = h.handle_date_pt
     AND e.vertical = h.vertical
     AND e.employee_id = h.employee_id
-
   WHERE
     e.employee_id = '19805'
   ORDER BY entering_date_pt DESC
-
 )
 
 SELECT *

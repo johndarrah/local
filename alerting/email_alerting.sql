@@ -37,7 +37,7 @@ handled_volume as ( --aggregating data about chat touches
             , COUNT(distinct case
                              when in_business_hours = TRUE then touch_id
                              else null end)                                                            as total_handled_sla
-       FROM APP_CASH_CS.PREPROD.MESSAGING_TOUCHES mt
+       FROM app_cash_cs.preprod.messaging_touches mt
        LEFT JOIN app_datamart_cco.sfdc_cfone.dim_queues dq on dq.queue_name = mt.queue_name
                 LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
                          ON mt.employee_id= ecd.employee_id
