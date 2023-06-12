@@ -39,34 +39,36 @@ WITH
   )
   , handled_messaging_touches AS (
   SELECT
-    mt.touch_assignment_time::DATE                                        AS handled_date_pt
+    ut.touch_assignment_time::DATE                                       AS handled_date_pt
     , ecd.employee_id
     , ecd.full_name
     , ecd.city
-    , team_name                                                           AS vertical
-    , mt.communication_channel                                            AS channel
-    , mt.business_unit_name
-    , COUNT(DISTINCT mt.touch_id)                                         AS handled_touches
+    , tqc.team_name                                                      AS vertical
+    , tqc.communication_channel                                          AS channel
+    , tqc.business_unit_name
+    , COUNT(DISTINCT ut.cfone_touch_id)                                  AS handled_touches
     , COUNT(DISTINCT
             CASE
-              WHEN (mt.response_time_seconds / 60) <= 7
-                AND mt.in_business_hours = TRUE
-                THEN mt.touch_id
+              WHEN (ut.response_time / 60) <= 7
+                AND ut.in_business_hours = TRUE
+                THEN ut.cfone_touch_id
               ELSE NULL
-            END)                                                          AS touches_in_sla
-    , COUNT(DISTINCT IFF(mt.in_business_hours, mt.touch_id, NULL))        AS qualified_sla_touches
-    , touches_in_sla / qualified_sla_touches * 100                        AS percent_touches_in_sla
-    , SUM(IFF(mt.in_business_hours, mt.response_time_seconds / 60, NULL)) AS response_time_min
-    , SUM(handle_time_seconds) / 60                                       AS handle_time_min
-  FROM app_datamart_cco.public.messaging_touches mt
+            END)                                                         AS touches_in_sla
+    , COUNT(DISTINCT IFF(ut.in_business_hours, ut.cfone_touch_id, NULL)) AS qualified_sla_touches
+    , touches_in_sla / qualified_sla_touches * 100                       AS percent_touches_in_sla
+    , SUM(IFF(ut.in_business_hours, ut.response_time / 60, NULL))        AS response_time_min
+    , SUM(ut.handle_time) / 60                                           AS handle_time_min
+  FROM app_datamart_cco.public.universal_touches ut
   JOIN app_cash_cs.public.employee_cash_dim ecd
-    ON mt.employee_id = ecd.employee_id
-    AND mt.touch_assignment_time::DATE BETWEEN ecd.start_date AND ecd.end_date
-
+    ON ut.advocate_id = ecd.cfone_id_today
+    AND ut.touch_assignment_time::DATE BETWEEN ecd.start_date AND ecd.end_date
+  LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
+    ON LOWER(ut.queue_name) = LOWER(tqc.queue_name)
   WHERE
     1 = 1
+    AND NVL(LOWER(tqc.business_unit_name), 'other') -- expand editor window
+    IN ('customer success - specialty', 'customer success - core', 'other')
     AND ecd.employee_id = '40706'
-
   GROUP BY 1, 2, 3, 4, 5, 6, 7
 )
   , messaging_touches_final AS (
