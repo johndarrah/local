@@ -16,22 +16,24 @@
 WITH
   entering_message_touches AS (
     SELECT
-      mt.touch_start_time::DATE           AS entering_date_pt
+      ut.touch_start_time::DATE           AS entering_date_pt
       , ecd.employee_id
       , ecd.full_name
       , ecd.city
-      , mt.team_name                      AS vertical
-      , mt.communication_channel          AS channel
-      , mt.business_unit_name
-      , COUNT(DISTINCT mt.touch_start_id) AS entering_touches
-    FROM app_cash_cs.preprod.messaging_touches mt
+      , tqc.team_name                     AS vertical
+      , tqc.communication_channel         AS channel
+      , tqc.business_unit_name
+      , COUNT(DISTINCT ut.cfone_touch_id) AS entering_touches
+    FROM app_datamart_cco.public.universal_touches ut
     LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
-      ON mt.employee_id = ecd.employee_id
-      AND mt.touch_start_time::DATE BETWEEN ecd.start_date AND ecd.end_date
+      ON ut.advocate_id = ecd.cfone_id_today
+      AND ut.touch_start_time::DATE BETWEEN ecd.start_date AND ecd.end_date
+    LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc -- feedback add this to ut
+      ON LOWER(ut.queue_name) = LOWER(tqc.queue_name)
     WHERE
-      YEAR(mt.touch_start_time) >= '2022' --note that some chats may be resolved without interaction
-      AND mt.business_unit_name IN ('CUSTOMER SUCCESS - SPECIALTY', 'CUSTOMER SUCCESS - CORE')
-
+      YEAR(ut.touch_start_time) >= '2022' --note that some chats may be resolved without interaction
+      AND NVL(LOWER(tqc.business_unit_name), 'other') -- expand editor window
+      IN ('customer success - specialty', 'customer success - core', 'other')
       AND ecd.employee_id = '40706'
     GROUP BY 1, 2, 3, 4, 5, 6, 7
   )
@@ -56,7 +58,7 @@ WITH
     , touches_in_sla / qualified_sla_touches * 100                        AS percent_touches_in_sla
     , SUM(IFF(mt.in_business_hours, mt.response_time_seconds / 60, NULL)) AS response_time_min
     , SUM(handle_time_seconds) / 60                                       AS handle_time_min
-  FROM app_cash_cs.preprod.messaging_touches mt
+  FROM app_datamart_cco.public.messaging_touches mt
   JOIN app_cash_cs.public.employee_cash_dim ecd
     ON mt.employee_id = ecd.employee_id
     AND mt.touch_assignment_time::DATE BETWEEN ecd.start_date AND ecd.end_date

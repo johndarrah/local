@@ -1,5 +1,5 @@
 with entering_volume as ( --aggregating data about chat touches
-       SELECT to_date(mt.touch_start_time)                                                 as entering_date
+       SELECT ut.touch_start_time::date                                                 as entering_date
             , ecd.employee_id
             , ecd.full_name
             , ecd.city
@@ -9,12 +9,13 @@ with entering_volume as ( --aggregating data about chat touches
             , COUNT(distinct touch_start_id)                                               as total_entering
             , COUNT(distinct case when backlog_handled then touch_start_id end)            as total_backlog_entering
             , COUNT(distinct case_id)                                                      as total_cases_entering
-       FROM APP_CASH_CS.PREPROD.MESSAGING_TOUCHES mt
+       FROM app_datamart_cco.public.universal_touches ut
                 LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
-                         ON mt.employee_id= ecd.employee_id
-                         AND to_date(mt.touch_start_time) between ecd.START_DATE and ecd.END_DATE
-       where to_date(mt.touch_start_time) >= '2022-01-01'   --note that some chats may be resolved without interaction by M
-       and business_unit_name in ('CUSTOMER SUCCESS - SPECIALTY','CUSTOMER SUCCESS - CORE')
+                         ON ut.advocate_id= ecd.cfone_id_today
+                         AND to_date(ut.touch_start_time) between ecd.START_DATE and ecd.END_DATE
+       where to_date(ut.touch_start_time) >= '2022-01-01'   --note that some chats may be resolved without interaction by M
+--          rework this to pull from UT
+       and ut.business_unit_name in ('CUSTOMER SUCCESS - SPECIALTY','CUSTOMER SUCCESS - CORE','Other')
        GROUP BY 1,2,3,4,5,6,7
        )
 ,
@@ -44,10 +45,6 @@ handled_volume as ( --aggregating data about chat touches
        where ecd.employee_id is not null
        GROUP BY 1,2,3,4,5,6,7
 ),
-
-
-
-
 messaging_final as
 (
    select
@@ -90,10 +87,6 @@ entering_rd_ast_volume as
    and date(chat_created_at) >= '2022-01-01'
    group by 1,2,3,4,5,6
 ),
-
-
-
-
 handled_rd_ast_volume as
 (
 select
@@ -120,10 +113,6 @@ select
    and date(chat_created_at) >= '2022-01-01'
    group by 1,2,3,4,5,6
 ),
-
-
-
-
 ast_rd_final as
 (
    select
