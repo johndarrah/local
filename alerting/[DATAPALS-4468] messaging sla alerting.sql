@@ -6,9 +6,9 @@
 -- glossary: https://wiki.sqprod.co/display/ISWIKI/CCO+Metrics+Definitions#CCOMetricsDefinitions-MESSAGINGMETRICS
 
 -- Notes
--- to identify touches coming in when there is a backlgo: mt.backlog_handled
--- -- must be handled
--- -- touch start time != assignment time or customer contact was not during business hours
+-- backlog must be handled and touch start time != assignment time or customer contact was not during business hours
+-- concurrency: touch lifetime / handle time
+
 -- app_cash_cs.public.live_agent_chat_escalations in UT but we don't have enough data to parse them out
 
 -- For handle time and touches, we're switching to Universal Touches
