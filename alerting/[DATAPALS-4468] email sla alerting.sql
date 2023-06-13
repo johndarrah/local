@@ -39,7 +39,6 @@ WITH
     WHERE
       YEAR(ut.touch_start_time) >= '2022' --note that some chats may be resolved without interaction
       AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
-      AND ut.channel = 'Chat'
       AND lace.parent_case_id IS NULL     -- exclude live agent for RD and AST since there's a CTE
       AND ecd.employee_id = '40706'
     GROUP BY 1, 2, 3, 4, 5, 6, 7
@@ -85,8 +84,8 @@ WITH
     AND lace.chat_record_type IN ('RD Chat', 'Internal Advocate Success')
   WHERE
     1 = 1
-    AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
-    AND ut.channel = 'Chat'
+    AND NVL(LOWER(tqc.business_unit_name), 'other') -- expand editor window
+    IN ('customer success - specialty', 'customer success - core', 'other')
     AND ecd.employee_id = '40706'
     AND lace.parent_case_id IS NULL -- exclude live agent
   GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
