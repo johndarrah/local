@@ -6,6 +6,7 @@
 -- glossary: https://wiki.sqprod.co/display/ISWIKI/CCO+Metrics+Definitions#CCOMetricsDefinitions-MESSAGINGMETRICS
 
 -- Notes
+-- timestamps in UTC
 -- backlog must be handled and touch start time != assignment time or customer contact was not during business hours
 -- concurrency: touch lifetime / handle time
 -- entering date = when the touch was created/assigned
@@ -33,7 +34,7 @@ WITH
     LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
       ON ut.advocate_id = ecd.cfone_id_today
       AND ut.touch_start_time::DATE BETWEEN ecd.start_date AND ecd.end_date
-    LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc -- feedback add this to ut
+    LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
       ON LOWER(ut.queue_name) = LOWER(tqc.queue_name)
     LEFT JOIN app_cash_cs.public.live_agent_chat_escalations lace
       ON ut.case_id = lace.parent_case_id
