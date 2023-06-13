@@ -8,15 +8,14 @@
 -- Notes
 -- to identify touches coming in when there is a backlgo: mt.backlog_handled
 -- -- must be handled
--- -- touch start time != assignment time
--- -- customer contact was not during business hours
+-- -- touch start time != assignment time or customer contact was not during business hours
 -- app_cash_cs.public.live_agent_chat_escalations in UT but we don't have enough data to parse them out
 
--- action items
 -- For handle time and touches, we're switching to Universal Touches
 -- -- I've found a few issues with app_cash_cs.preprod.messaging_touches and DMC has voiced to me that they plan on only fixing UT moving forward
 -- The volume and SLA's will be when the touch occurred, not when it was assigned
 -- -- the assignment date is based on when the case goes from the queue to the advocate
+
 WITH
   entering_message_touches AS (
     SELECT
@@ -36,36 +35,44 @@ WITH
       ON LOWER(ut.queue_name) = LOWER(tqc.queue_name)
     LEFT JOIN app_cash_cs.public.live_agent_chat_escalations lace
       ON ut.case_id = lace.parent_case_id
+      AND lace.chat_record_type IN ('RD Chat', 'Internal Advocate Success')
     WHERE
       YEAR(ut.touch_start_time) >= '2022' --note that some chats may be resolved without interaction
-      AND NVL(LOWER(tqc.business_unit_name), 'other') -- expand editor window
-      IN ('customer success - specialty', 'customer success - core', 'other')
-      AND lace.parent_case_id IS NULL     -- exclude live agent
+      AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
+      AND lace.parent_case_id IS NULL     -- exclude live agent for RD and AST since there's a CTE
       AND ecd.employee_id = '40706'
     GROUP BY 1, 2, 3, 4, 5, 6, 7
   )
   , handled_messaging_touches AS (
   SELECT
-    ut.touch_start_time::DATE                                            AS handled_date_pt
+    ut.touch_start_time::DATE                                             AS handled_date_pt
     , ut.advocate_id
     , ecd.employee_id
     , ecd.full_name
     , ecd.city
-    , tqc.team_name                                                      AS vertical
-    , tqc.communication_channel                                          AS channel
+    , tqc.team_name                                                       AS vertical
+    , tqc.communication_channel                                           AS channel
     , tqc.business_unit_name
-    , COUNT(DISTINCT ut.cfone_touch_id)                                  AS handled_touches
+    , COUNT(DISTINCT ut.cfone_touch_id)                                   AS handled_touches
+    , SUM(IFF(ut.in_business_hours, ut.response_time / 60, NULL))         AS response_time_min
+    , SUM(ut.handle_time) / 60                                            AS handle_time_min
+    , SUM(DATEDIFF(MINUTES, ut.touch_assignment_time, ut.touch_end_time)) AS touch_lifetime_min
+    , touch_lifetime_min / handle_time_min                                AS concurrency
+    , COUNT(DISTINCT
+            CASE
+              WHEN ut.touch_assignment_time::DATE != ut.touch_start_time::DATE
+                OR NOT ut.in_business_hours
+                THEN ut.cfone_touch_id
+            END)                                                          AS handled_backlog_touches
     , COUNT(DISTINCT
             CASE
               WHEN (ut.response_time / 60) <= 7
                 AND ut.in_business_hours = TRUE
                 THEN ut.cfone_touch_id
               ELSE NULL
-            END)                                                         AS touches_in_sla
-    , COUNT(DISTINCT IFF(ut.in_business_hours, ut.cfone_touch_id, NULL)) AS qualified_sla_touches
-    , touches_in_sla / NULLIFZERO(qualified_sla_touches) * 100           AS percent_touches_in_sla
-    , SUM(IFF(ut.in_business_hours, ut.response_time / 60, NULL))        AS response_time_min
-    , SUM(ut.handle_time) / 60                                           AS handle_time_min
+            END)                                                          AS touches_in_sla
+    , COUNT(DISTINCT IFF(ut.in_business_hours, ut.cfone_touch_id, NULL))  AS qualified_sla_touches
+    , touches_in_sla / NULLIFZERO(qualified_sla_touches) * 100            AS percent_touches_in_sla
   FROM app_datamart_cco.public.universal_touches ut
   LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
     ON ut.advocate_id = ecd.cfone_id_today
@@ -74,6 +81,7 @@ WITH
     ON LOWER(ut.queue_name) = LOWER(tqc.queue_name)
   LEFT JOIN app_cash_cs.public.live_agent_chat_escalations lace
     ON ut.case_id = lace.parent_case_id
+    AND lace.chat_record_type IN ('RD Chat', 'Internal Advocate Success')
   WHERE
     1 = 1
     AND NVL(LOWER(tqc.business_unit_name), 'other') -- expand editor window
@@ -93,11 +101,14 @@ WITH
     , COALESCE(h.business_unit_name, e.business_unit_name) AS business_unit_name
     , e.entering_touches
     , h.handled_touches
+    , h.handled_backlog_touches
     , h.touches_in_sla
     , h.qualified_sla_touches
     , h.percent_touches_in_sla
     , h.response_time_min
     , h.handle_time_min
+    , h.touch_lifetime_min
+    , h.concurrency
   FROM entering_message_touches e
   LEFT JOIN handled_messaging_touches h
     ON e.entering_date_pt = h.handled_date_pt
@@ -132,7 +143,11 @@ WITH
     , 'CHAT'                                         AS channel
     , 'CUSTOMER SUCCESS - CORE'                      AS business_unit_name
     , COUNT(DISTINCT chat_transcript_id)             AS handled_touches
+    , NULL                                           AS handled_backlog_touches
     , SUM(chat_handle_time / 60)                     AS handle_time_min
+    , SUM(chat_handle_time / 60)                     AS touch_lifetime_min
+    , touch_lifetime_min / handle_time_min           AS concurrency
+    , NULL                                           AS response_time_min
     , COUNT(DISTINCT
             CASE
               WHEN chat_record_type = 'RD Chat'
@@ -176,11 +191,14 @@ WITH
     , COALESCE(h.business_unit_name, e.business_unit_name) AS business_unit_name
     , e.entering_touches
     , h.handled_touches
+    , h.handled_backlog_touches
     , h.touches_in_sla
     , h.qualified_sla_touches
     , h.percent_touches_in_sla
-    , NULL                                                 AS response_time_min
+    , h.response_time_min
     , h.handle_time_min
+    , h.touch_lifetime_min
+    , h.concurrency
   FROM entering_rd_ast_touches AS e
   LEFT JOIN handled_rd_ast_touches AS h
     ON e.entering_date_pt = h.handle_date_pt
