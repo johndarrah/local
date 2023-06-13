@@ -19,14 +19,14 @@
 WITH
   entering_message_touches AS (
     SELECT
-      ut.touch_start_time::DATE           AS entering_date_pt
+      TO_CHAR(DATE_TRUNC(HOURS, ut.touch_start_time), 'YYYY-MM-DD HH24:MI:SS') AS entering_hour
       , ecd.employee_id
       , ecd.full_name
       , ecd.city
-      , tqc.team_name                     AS vertical
-      , tqc.communication_channel         AS channel
+      , tqc.team_name                                                          AS vertical
+      , tqc.communication_channel                                              AS channel
       , tqc.business_unit_name
-      , COUNT(DISTINCT ut.cfone_touch_id) AS entering_touches
+      , COUNT(DISTINCT ut.cfone_touch_id)                                      AS entering_touches
     FROM app_datamart_cco.public.universal_touches ut
     LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
       ON ut.advocate_id = ecd.cfone_id_today
@@ -46,34 +46,34 @@ WITH
   )
   , handled_messaging_touches AS (
   SELECT
-    ut.touch_start_time::DATE                                             AS handled_date_pt
+    TO_CHAR(DATE_TRUNC(HOURS, ut.touch_start_time), 'YYYY-MM-DD HH24:MI:SS') AS handled_hour
     , ut.advocate_id
     , ecd.employee_id
     , ecd.full_name
     , ecd.city
-    , tqc.team_name                                                       AS vertical
-    , tqc.communication_channel                                           AS channel
+    , tqc.team_name                                                          AS vertical
+    , tqc.communication_channel                                              AS channel
     , tqc.business_unit_name
-    , COUNT(DISTINCT ut.cfone_touch_id)                                   AS handled_touches
-    , SUM(IFF(ut.in_business_hours, ut.response_time / 60, NULL))         AS response_time_min
-    , SUM(ut.handle_time) / 60                                            AS handle_time_min
-    , SUM(DATEDIFF(MINUTES, ut.touch_assignment_time, ut.touch_end_time)) AS touch_lifetime_min
-    , touch_lifetime_min / handle_time_min                                AS concurrency
+    , COUNT(DISTINCT ut.cfone_touch_id)                                      AS handled_touches
+    , SUM(IFF(ut.in_business_hours, ut.response_time / 60, NULL))            AS response_time_min
+    , SUM(ut.handle_time) / 60                                               AS handle_time_min
+    , SUM(DATEDIFF(MINUTES, ut.touch_assignment_time, ut.touch_end_time))    AS touch_lifetime_min
+    , touch_lifetime_min / handle_time_min                                   AS concurrency
     , COUNT(DISTINCT
             CASE
               WHEN ut.touch_assignment_time::DATE != ut.touch_start_time::DATE
                 OR NOT ut.in_business_hours
                 THEN ut.cfone_touch_id
-            END)                                                          AS handled_backlog_touches
+            END)                                                             AS handled_backlog_touches
     , COUNT(DISTINCT
             CASE
               WHEN (ut.response_time / 60) <= 7
                 AND ut.in_business_hours = TRUE
                 THEN ut.cfone_touch_id
               ELSE NULL
-            END)                                                          AS touches_in_sla
-    , COUNT(DISTINCT IFF(ut.in_business_hours, ut.cfone_touch_id, NULL))  AS qualified_sla_touches
-    , touches_in_sla / NULLIFZERO(qualified_sla_touches) * 100            AS percent_touches_in_sla
+            END)                                                             AS touches_in_sla
+    , COUNT(DISTINCT IFF(ut.in_business_hours, ut.cfone_touch_id, NULL))     AS qualified_sla_touches
+    , touches_in_sla / NULLIFZERO(qualified_sla_touches) * 100               AS percent_touches_in_sla
   FROM app_datamart_cco.public.universal_touches ut
   LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
     ON ut.advocate_id = ecd.cfone_id_today
@@ -93,7 +93,7 @@ WITH
 )
   , messaging_touches_final AS (
   SELECT
-    e.entering_date_pt
+    e.entering_hour
     , h.employee_id
     , h.full_name
     , h.city
@@ -112,15 +112,19 @@ WITH
     , h.concurrency
   FROM entering_message_touches e
   LEFT JOIN handled_messaging_touches h
-    ON e.entering_date_pt = h.handled_date_pt
+    ON e.entering_hour = h.handled_hour
     AND e.employee_id = h.employee_id
     AND e.vertical = h.vertical
 
-  ORDER BY entering_date_pt DESC
+  ORDER BY entering_hour DESC
 )
   , entering_rd_ast_touches AS (
   SELECT
-    chat_created_at::DATE                            AS entering_date_pt
+    TO_CHAR(
+      DATE_TRUNC(HOURS,
+                 CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', chat_start_time)
+        ),
+      'YYYY-MM-DD HH24:MI:SS')                       AS entered_hour
     , chat_advocate_employee_id                      AS employee_id
     , chat_advocate                                  AS full_name
     , chat_advocate_city                             AS city
@@ -136,7 +140,11 @@ WITH
 )
   , handled_rd_ast_touches AS (
   SELECT
-    chat_start_time::DATE                            AS handle_date_pt
+    TO_CHAR(
+      DATE_TRUNC(HOURS,
+                 CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', chat_start_time)
+        ),
+      'YYYY-MM-DD HH24:MI:SS')                       AS handled_hour
     , chat_advocate_employee_id                      AS employee_id
     , chat_advocate                                  AS full_name
     , chat_advocate_city                             AS city
@@ -174,7 +182,8 @@ WITH
               ELSE NULL
             END)                                     AS abandoned_touches
     , handled_touches - abandoned_touches            AS qualified_sla_touches
-    , touches_in_sla / qualified_sla_touches * 100   AS percent_touches_in_sla
+    , touches_in_sla /
+    qualified_sla_touches * 100                      AS percent_touches_in_sla
   FROM app_cash_cs.public.live_agent_chat_escalations
   WHERE
     YEAR(chat_created_at) >= '2022'
@@ -183,7 +192,7 @@ WITH
 )
   , ast_rd_touches_final AS (
   SELECT
-    e.entering_date_pt                                     AS entering_date_pt
+    e.entered_hour                                         AS entering_date_pt
     , h.employee_id
     , h.full_name
     , h.city
@@ -202,7 +211,7 @@ WITH
     , h.concurrency
   FROM entering_rd_ast_touches AS e
   LEFT JOIN handled_rd_ast_touches AS h
-    ON e.entering_date_pt = h.handle_date_pt
+    ON e.entered_hour = h.handled_hour
     AND e.vertical = h.vertical
     AND e.employee_id = h.employee_id
   WHERE
