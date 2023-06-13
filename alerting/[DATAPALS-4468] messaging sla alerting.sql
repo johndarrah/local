@@ -8,6 +8,8 @@
 -- Notes
 -- backlog must be handled and touch start time != assignment time or customer contact was not during business hours
 -- concurrency: touch lifetime / handle time
+-- entering date = when the touch was created/assigned
+-- handle date = when the touch was started
 
 -- app_cash_cs.public.live_agent_chat_escalations in UT but we don't have enough data to parse them out
 
@@ -19,14 +21,14 @@
 WITH
   entering_message_touches AS (
     SELECT
-      TO_CHAR(DATE_TRUNC(HOURS, ut.touch_start_time), 'YYYY-MM-DD HH24:MI:SS') AS entering_hour
+      TO_CHAR(DATE_TRUNC(HOURS, ut.touch_assignment_time), 'YYYY-MM-DD HH24:MI:SS') AS entering_hour
       , ecd.employee_id
       , ecd.full_name
       , ecd.city
-      , tqc.team_name                                                          AS vertical
-      , tqc.communication_channel                                              AS channel
+      , tqc.team_name                                                               AS vertical
+      , tqc.communication_channel                                                   AS channel
       , tqc.business_unit_name
-      , COUNT(DISTINCT ut.cfone_touch_id)                                      AS entering_touches
+      , COUNT(DISTINCT ut.cfone_touch_id)                                           AS entering_touches
     FROM app_datamart_cco.public.universal_touches ut
     LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
       ON ut.advocate_id = ecd.cfone_id_today
@@ -41,7 +43,6 @@ WITH
       AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
       AND ut.channel = 'Chat'
       AND lace.parent_case_id IS NULL     -- exclude live agent for RD and AST since there's a CTE
-      AND ecd.employee_id = '40706'
     GROUP BY 1, 2, 3, 4, 5, 6, 7
   )
   , handled_messaging_touches AS (
@@ -87,44 +88,16 @@ WITH
     1 = 1
     AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
     AND ut.channel = 'Chat'
-    AND ecd.employee_id = '40706'
     AND lace.parent_case_id IS NULL -- exclude live agent
   GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
-)
-  , messaging_touches_final AS (
-  SELECT
-    e.entering_hour
-    , h.employee_id
-    , h.full_name
-    , h.city
-    , COALESCE(h.vertical, e.vertical)                     AS vertical
-    , COALESCE(h.channel, e.channel)                       AS channel
-    , COALESCE(h.business_unit_name, e.business_unit_name) AS business_unit_name
-    , e.entering_touches
-    , h.handled_touches
-    , h.handled_backlog_touches
-    , h.touches_in_sla
-    , h.qualified_sla_touches
-    , h.percent_touches_in_sla
-    , h.response_time_min
-    , h.handle_time_min
-    , h.touch_lifetime_min
-    , h.concurrency
-  FROM entering_message_touches e
-  LEFT JOIN handled_messaging_touches h
-    ON e.entering_hour = h.handled_hour
-    AND e.employee_id = h.employee_id
-    AND e.vertical = h.vertical
-
-  ORDER BY entering_hour DESC
 )
   , entering_rd_ast_touches AS (
   SELECT
     TO_CHAR(
       DATE_TRUNC(HOURS,
-                 CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', chat_start_time)
+                 CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', chat_created_at)
         ),
-      'YYYY-MM-DD HH24:MI:SS')                       AS entered_hour
+      'YYYY-MM-DD HH24:MI:SS')                       AS entering_hour
     , chat_advocate_employee_id                      AS employee_id
     , chat_advocate                                  AS full_name
     , chat_advocate_city                             AS city
@@ -190,39 +163,78 @@ WITH
     AND chat_record_type IN ('RD Chat', 'Internal Advocate Success')
   GROUP BY 1, 2, 3, 4, 5, 6
 )
-  , ast_rd_touches_final AS (
-  SELECT
-    e.entered_hour                                         AS entering_date_pt
-    , h.employee_id
-    , h.full_name
-    , h.city
-    , COALESCE(h.vertical, e.vertical)                     AS vertical
-    , COALESCE(h.channel, e.channel)                       AS channel
-    , COALESCE(h.business_unit_name, e.business_unit_name) AS business_unit_name
-    , e.entering_touches
-    , h.handled_touches
-    , h.handled_backlog_touches
-    , h.touches_in_sla
-    , h.qualified_sla_touches
-    , h.percent_touches_in_sla
-    , h.response_time_min
-    , h.handle_time_min
-    , h.touch_lifetime_min
-    , h.concurrency
-  FROM entering_rd_ast_touches AS e
-  LEFT JOIN handled_rd_ast_touches AS h
-    ON e.entered_hour = h.handled_hour
-    AND e.vertical = h.vertical
-    AND e.employee_id = h.employee_id
-  WHERE
-    e.employee_id = '19805'
-  ORDER BY entering_date_pt DESC
-)
 
-SELECT *
-FROM messaging_touches_final
+  -- messaging touches
+SELECT
+  e.entering_hour
+  , e.employee_id
+  , e.full_name
+  , e.city
+  , e.vertical
+  , e.channel
+  , e.business_unit_name
+  , e.entering_touches
+  , h.handled_touches
+  , h.handled_backlog_touches
+  , h.touches_in_sla
+  , h.qualified_sla_touches
+  , h.percent_touches_in_sla
+  , h.response_time_min
+  , h.handle_time_min
+  , h.touch_lifetime_min
+  , h.concurrency
+FROM entering_message_touches e
+LEFT JOIN handled_messaging_touches h
+  ON e.entering_hour = h.handled_hour
+  AND e.employee_id = h.employee_id
+  AND e.vertical = h.vertical
+  AND e.employee_id = '40706'
 
 UNION
 
-SELECT *
-FROM ast_rd_touches_final
+-- AST and RD touches
+SELECT
+  e.entering_hour
+  , e.employee_id
+  , e.full_name
+  , e.city
+  , e.vertical
+  , e.channel
+  , e.business_unit_name
+  , e.entering_touches
+  , h.handled_touches
+  , h.handled_backlog_touches
+  , h.touches_in_sla
+  , h.qualified_sla_touches
+  , h.percent_touches_in_sla
+  , h.response_time_min
+  , h.handle_time_min
+  , h.touch_lifetime_min
+  , h.concurrency
+FROM entering_rd_ast_touches AS e
+LEFT JOIN handled_rd_ast_touches AS h
+  ON e.entering_hour = h.handled_hour
+  AND e.vertical = h.vertical
+  AND e.employee_id = h.employee_id
+WHERE
+  e.employee_id = '19805'
+ORDER BY 1 DESC
+
+
+-- -- QA
+
+-- live chats without a start time
+-- SELECT
+--   chat_advocate_employee_id AS employee_id
+--   , chat_advocate           AS full_name
+--   , chat_advocate_city      AS city
+--   , chat_record_type
+--   , chat_start_time
+--   , chat_end_time
+--   , *
+-- FROM app_cash_cs.public.live_agent_chat_escalations
+-- WHERE
+--   YEAR(chat_created_at) >= '2022'
+--   AND chat_record_type IN ('RD Chat', 'Internal Advocate Success')
+--   AND employee_id = '19805'
+--   AND chat_start_time IS NULL
