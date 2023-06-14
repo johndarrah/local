@@ -138,7 +138,7 @@ WITH
     --     exclude current twitter and phone cases
     AND NVL(ut.channel, sc.origin) NOT IN ('Twitter', 'Phone')
 )
-  , didv_handled_02 AS (
+  , didv_entering_02 AS (
   SELECT
     d.dt                                 AS dt
     , rif.token::STRING                  AS case_id
@@ -154,7 +154,7 @@ WITH
   WHERE
     method_of_review = 'ADVOCATE'
 )
-  , notary_handled_03 AS (
+  , notary_entering_03 AS (
   SELECT DISTINCT
     d.dt                                            AS dt
     , naq.assignment_id                             AS case_id
@@ -192,13 +192,13 @@ WITH
     , naq.handled_minutes                           AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.notary_assignments_queue naq
-    ON d.dt = naq.occurred_at::DATE
+    ON d.dt = CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', naq.occurred_at)::DATE
   WHERE
     classification IS NOT NULL
-  QUALIFY
-    ROW_NUMBER() OVER ( PARTITION BY naq.assignment_id ORDER BY naq.occurred_at) = 1
+  --   QUALIFY
+  --     ROW_NUMBER() OVER ( PARTITION BY naq.assignment_id ORDER BY naq.submitted_at) = 1
 )
-  , banking_risk_handled_04 AS (
+  , banking_risk_entering_04 AS (
   SELECT
     d.dt                                            AS dt
     , brp.case_id                                   AS case_id
@@ -215,10 +215,10 @@ WITH
     , NULL                                          AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.banking_risk_performance brp
-    ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', brp.created_date_pst)
+    ON d.dt = CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', brp.created_date_pst)
 )
   -- regulator: determines the type of banking fraud is coming
-  , banking_hashtag_handled_05 AS (
+  , banking_hashtag_entering_05 AS (
   SELECT
     d.dt                                    AS dt
     , bh.primary_key                        AS case_id
@@ -237,7 +237,7 @@ WITH
     ON bh.target_token = ra.target_token
 )
   -- regulator: customer orders cash card signature and checks that it's not a duplicate name
-  , cash_card_handled_06 AS (
+  , cash_card_entering_06 AS (
   SELECT
     d.dt                                                     AS dt
     , rcccf.customer_token::STRING                           AS case_id
@@ -252,11 +252,11 @@ WITH
     , ra.handled_seconds                                     AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.risk_cash_card_customization_fact rcccf
-    ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', rcccf.created_at_pt)
+    ON d.dt = CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', rcccf.created_at_pt)
   LEFT JOIN regulator_agg ra
     ON rcccf.token = ra.target_token
 )
-  , social_handled_07 AS (
+  , social_entering_07 AS (
   SELECT
     d.dt                                   AS dt
     , sc.sprinklr_case_id::STRING          AS case_id
@@ -267,9 +267,9 @@ WITH
     , NULL                                 AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.sprinklr_cases sc
-    ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', sc.created_time_pt)::DATE
+    ON d.dt = CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', sc.created_time_pt)::DATE
 )
-  , voice_handled_08 AS (
+  , voice_entering_08 AS (
   SELECT
     d.dt                                 AS dt
     , cr.contact_id                      AS case_id
@@ -280,13 +280,13 @@ WITH
     , cr.handle_time                     AS handle_time
   FROM dt d
   JOIN app_cash_cs.preprod.call_records cr
-    ON d.dt = cr.case_created_date
+    ON d.dt = CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.case_created_date)::DATE
   WHERE
     1 = 1
     AND NOT cr.out_of_hours
     AND cr.is_handled
 )
-  , handled_volume AS (
+  , entering_volume AS (
   SELECT
     dt
     , case_id
@@ -307,7 +307,7 @@ WITH
     , data_source
     , classification
     , handle_time
-  FROM didv_handled_02
+  FROM didv_entering_02
 
   UNION ALL
 
@@ -319,7 +319,7 @@ WITH
     , data_source
     , classification
     , handle_time
-  FROM notary_handled_03
+  FROM notary_entering_03
 
   UNION ALL
 
@@ -331,7 +331,7 @@ WITH
     , data_source
     , classification
     , handle_time
-  FROM banking_risk_handled_04
+  FROM banking_risk_entering_04
 
   UNION ALL
 
@@ -343,7 +343,7 @@ WITH
     , data_source
     , classification
     , handle_time
-  FROM banking_hashtag_handled_05
+  FROM banking_hashtag_entering_05
 
   UNION ALL
 
@@ -355,7 +355,7 @@ WITH
     , data_source
     , classification
     , handle_time
-  FROM cash_card_handled_06
+  FROM cash_card_entering_06
 
   UNION ALL
 
@@ -367,7 +367,7 @@ WITH
     , data_source
     , classification
     , handle_time
-  FROM social_handled_07
+  FROM social_entering_07
 
   UNION ALL
 
@@ -379,31 +379,31 @@ WITH
     , data_source
     , classification
     , handle_time
-  FROM voice_handled_08
+  FROM voice_entering_08
 )
 
 SELECT
-  DATE_TRUNC(MONTH, hv.dt)   AS month_dt
-  , IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
-        TRIM(SUBSTR(hv.classification, 17, LEN(hv.classification))),
-        hv.classification
-  )                          AS classification
+  DATE_TRUNC(MONTH, ev.dt)             AS month_dt
+  , IFF(LEFT(ev.classification, 17) = '[No Handle Time] ',
+        TRIM(SUBSTR(ev.classification, 17, LEN(ev.classification))),
+        ev.classification
+  )                                    AS classification
   --   , hv.classification
   , COUNT(DISTINCT
-          IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
+          IFF(LEFT(ev.classification, 17) = '[No Handle Time] ',
               case_id,
               NULL
             )
-  )                          AS entering_volume_without_ht
+  )                                    AS entering_volume_without_ht
   , COUNT(DISTINCT
-          IFF(LEFT(hv.classification, 17) != '[No Handle Time] ',
+          IFF(LEFT(ev.classification, 17) != '[No Handle Time] ',
               case_id,
               NULL
             )
-  )                          AS entering_volume_with_ht
-  , COUNT(DISTINCT case_id)  AS total_entering_volume
-  , SUM(hv.handle_time) / 60 AS handle_time_minutes
-FROM handled_volume hv
+  )                                    AS entering_volume_with_ht
+  , COUNT(DISTINCT ev.case_id)         AS total_entering_volume
+  , ROUND(SUM(ev.handle_time) / 60, 2) AS handle_time_minutes
+FROM entering_volume ev
 WHERE
   1 = 1
 GROUP BY 1, 2

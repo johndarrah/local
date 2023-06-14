@@ -56,7 +56,7 @@ WITH
   FROM regulator_base
     PIVOT (MAX(created_at) FOR logical_event_name IN ('CREATE_CASE','ASSIGN' , 'CLOSED_COMPLETE')) AS p
 )
-  , handled_messaging_email_01 AS (
+  , messaging_email_handled_01 AS (
   SELECT
     d.dt                                          AS dt
     , ut.case_id                                  AS case_id
@@ -130,7 +130,7 @@ WITH
     , ut.handle_time                              AS handle_time
   FROM dt d
   JOIN app_datamart_cco.public.universal_touches ut
-    ON ut.created_at::DATE = d.dt
+    ON d.dt = ut.touch_start_time::DATE
     AND ut.source = 'cfone'
   LEFT JOIN app_cash_cs.public.support_cases sc
     ON ut.case_id = sc.case_id
@@ -189,17 +189,17 @@ WITH
       WHEN naq.queue = 'rdc_returns_rars'
         THEN 'Remote Deposit Capture'
       WHEN naq.queue = 'TRANSACTION_MONITORING'
-        THEN 'Banking Fraud'
+        THEN 'Banking Frauds'
       ELSE NULL
     END                                             AS classification
     , naq.handled_minutes                           AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.notary_assignments_queue naq
-    ON d.dt = naq.occurred_at::DATE
+    ON d.dt = CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', naq.claimed_at)::DATE
   WHERE
     classification IS NOT NULL
-  QUALIFY
-    ROW_NUMBER() OVER ( PARTITION BY naq.assignment_id ORDER BY naq.occurred_at) = 1
+  --   QUALIFY
+  --     ROW_NUMBER() OVER ( PARTITION BY naq.assignment_id ORDER BY naq.submitted_at) = 1
 )
   , banking_risk_handled_04 AS (
   SELECT
@@ -219,7 +219,7 @@ WITH
     , NULL                                          AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.banking_risk_performance brp
-    ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', brp.created_date_pst)
+    ON d.dt = CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', brp.created_date_pst)
 )
   -- regulator: determines the type of banking fraud is coming
   , banking_hashtag_handled_05 AS (
@@ -258,7 +258,7 @@ WITH
     , ra.handled_seconds                                     AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.risk_cash_card_customization_fact rcccf
-    ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', rcccf.created_at_pt)
+    ON d.dt = CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', rcccf.created_at_pt)
   LEFT JOIN regulator_agg ra
     ON rcccf.token = ra.target_token
 )
@@ -274,7 +274,7 @@ WITH
     , NULL                                 AS handle_time
   FROM dt d
   JOIN app_cash_cs.public.sprinklr_cases sc
-    ON d.dt = CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', sc.created_time_pt)::DATE
+    ON d.dt = CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', sc.created_time_pt)::DATE
 )
   , voice_handled_08 AS (
   SELECT
@@ -288,7 +288,7 @@ WITH
     , cr.handle_time                     AS handle_time
   FROM dt d
   JOIN app_cash_cs.preprod.call_records cr
-    ON d.dt = cr.case_created_date
+    ON d.dt = CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.case_created_date)::DATE
   WHERE
     1 = 1
     AND NOT cr.out_of_hours
@@ -304,7 +304,7 @@ WITH
     , data_source
     , classification
     , handle_time
-  FROM handled_messaging_email_01
+  FROM messaging_email_handled_01
 
   UNION ALL
 
@@ -399,29 +399,31 @@ WITH
 )
 
 SELECT
-  DATE_TRUNC(MONTH, hv.dt)   AS month_dt
+  DATE_TRUNC(MONTH, hv.dt)             AS month_dt
   , IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
         TRIM(SUBSTR(hv.classification, 17, LEN(hv.classification))),
         hv.classification
-  )                          AS classification
+  )                                    AS classification
   --   , hv.classification
   , COUNT(DISTINCT
           IFF(LEFT(hv.classification, 17) = '[No Handle Time] ',
-              case_id,
+              hv.touch_id,
               NULL
             )
-  )                          AS touches_without_ht
+  )                                    AS touches_without_ht
   , COUNT(DISTINCT
           IFF(LEFT(hv.classification, 17) != '[No Handle Time] ',
-              case_id,
+              hv.touch_id,
               NULL
             )
-  )                          AS touches_with_ht
-  , COUNT(DISTINCT touch_id) AS total_touches
-  , SUM(hv.handle_time) / 60 AS handle_time_minutes
+  )                                    AS touches_with_ht
+  , COUNT(DISTINCT hv.touch_id)        AS total_touches
+  , ROUND(SUM(hv.handle_time) / 60, 2) AS handle_time_minutes
 FROM handled_volume hv
 WHERE
   1 = 1
+  --     AND classification = 'Banking Frauds'
+  --   AND dt = '2023-05-01'
 GROUP BY 1, 2
 ORDER BY 1 DESC, 2
 ;
