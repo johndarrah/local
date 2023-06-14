@@ -43,7 +43,7 @@ WITH
     , tqc.communication_channel                                              AS channel
     , tqc.business_unit_name
     , COUNT(DISTINCT ut.cfone_touch_id)                                      AS handled_touches
-    , SUM(IFF(ut.in_business_hours, ut.response_time / 60, NULL))            AS response_time_min
+    , SUM(IFF(ut.in_business_hours, ut.response_time / 60, NULL))            AS response_time_min -- do we only care about response times in bh
     , SUM(ut.handle_time) / 60                                               AS handle_time_min
     , SUM(DATEDIFF(MINUTES, ut.touch_assignment_time, ut.touch_end_time))    AS touch_lifetime_min
     , touch_lifetime_min / handle_time_min                                   AS concurrency
@@ -55,13 +55,18 @@ WITH
             END)                                                             AS handled_backlog_touches
     , COUNT(DISTINCT
             CASE
-              WHEN (ut.response_time / 60) <= 7
-                AND ut.in_business_hours = TRUE
+              WHEN ut.response_time / 60 <= 24
+                AND LOWER(ut.inbound_type) != 'transfer' -- need to translate from here: https://github.com/squareup/app-cash-cs/blob/main/datapals_ETLS/Email%20Daily%20Agg%20ETL.sql#L93
                 THEN ut.cfone_touch_id
               ELSE NULL
             END)                                                             AS touches_in_sla
-    , COUNT(DISTINCT IFF(ut.in_business_hours, ut.cfone_touch_id, NULL))     AS qualified_sla_touches
-    , touches_in_sla / NULLIFZERO(qualified_sla_touches) * 100               AS percent_touches_in_sla
+    , COUNT(DISTINCT
+            CASE
+              WHEN ut.inbound_type IN ('EML', 'EML/TRN', 'TR') -- need to translate what from here: https://github.com/squareup/app-cash-cs/blob/main/datapals_ETLS/Email%20Daily%20Agg%20ETL.sql#L90
+                THEN ut.cfone_touch_id
+              ELSE NULL
+            END)                                                             AS response_handled
+    , touches_in_sla / NULLIFZERO(response_handled) * 100                    AS percent_touches_in_sla
   FROM app_datamart_cco.public.universal_touches ut
   LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
     ON ut.advocate_id = ecd.cfone_id_today
@@ -87,7 +92,7 @@ SELECT
   , h.handled_touches
   , h.handled_backlog_touches
   , h.touches_in_sla
-  , h.qualified_sla_touches
+  , h.response_handled
   , h.percent_touches_in_sla
   , h.response_time_min
   , h.handle_time_min
@@ -98,4 +103,4 @@ LEFT JOIN handled_email_touches h
   ON e.entering_hour = h.handled_hour
   AND e.employee_id = h.employee_id
   AND e.vertical = h.vertical
-  AND e.employee_id = '44222'
+--   AND e.employee_id = '44222'
