@@ -13,7 +13,7 @@
 SELECT
   TO_CHAR(
     DATE_TRUNC(HOURS,
-               CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_date)
+               CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)
       ),
     'YYYY-MM-DD HH24:MI:SS')                                          AS entering_hour
   , ecd.employee_id
