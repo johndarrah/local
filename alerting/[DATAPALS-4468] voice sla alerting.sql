@@ -66,15 +66,20 @@ SELECT
                        AND cr.is_handled = TRUE
                        THEN cr.contact_id
                      ELSE NULL
-                   END)                                               AS inbound_calls_hoops
+                   END)                                               AS inbound_touches_hoops
   , COUNT(DISTINCT CASE
                      WHEN cr.is_abandoned = TRUE
-                       AND NOT cr.is_queued -- why this if the call is already abandoned -- redundant?
-                       AND cr.speed_to_callback IS NULL -- redundant?
+                       AND NOT cr.is_queued
+                       AND cr.speed_to_callback IS NULL
                        AND DATEDIFF('second', cr.call_start_time, cr.call_end_time) <= 10
                        THEN cr.contact_id
                      ELSE NULL
                    END)                                               AS short_abandons
+  , COUNT(DISTINCT
+          CASE
+            WHEN cr.initiation_method = 'OUTBOUND'
+              THEN cr.contact_id
+          END)                                                        AS dialouts
   , COUNT(DISTINCT
           CASE
             WHEN cr.initiation_method IN ('API', 'INBOUND')
@@ -87,10 +92,11 @@ SELECT
             ELSE NULL
           END)                                                        AS touches_in_sl
   , CASE
-      WHEN inbound_calls_hoops = 0
+      WHEN inbound_touches_hoops = 0
         THEN NULL
-      ELSE (inbound_calls_hoops - short_abandons)
+      ELSE (inbound_touches_hoops - short_abandons)
     END                                                               AS qualified_sla_touches
+  , touches_in_sl / qualified_sla_touches                             AS sl_percent
   , response_time_min / NULLIFZERO(qualified_sla_touches)             AS avg_response_time_min -- denominator: why touches in sla and not touches handles
   , handle_time_min / NULLIFZERO(touches_handled)                     AS avg_handle_time_min   -- denominator: why touches handled and not touches in SLA
 FROM app_cash_cs.preprod.call_records cr
