@@ -11,25 +11,24 @@
 -- callbacks are missing employee information
 
 SELECT
-  1 = 1
-  --   TO_CHAR(
-  --     DATE_TRUNC(HOURS,
-  --                CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)
-  --       ),
-  --     'YYYY-MM-DD HH24:MI:SS')                                          AS entering_hour
-  --   , ecd.employee_id
-  --   , ecd.full_name
-  --   , ecd.city
-  --   , CASE
-  --       WHEN cr.queue_name IN ('US-EN Cash CS Manager Escalations',
-  --                              'US-EN Cash CS Manager Escalation',
-  --                              'US-EN Cash Concierge',
-  --                              'US-EN Manager Escalations',
-  --                              'US-ES Manager Escalations')
-  --         THEN 'ERET'
-  --       ELSE 'CORE CS'
-  --     END                                                               AS vertical
-  --   , 'Voice'                                                           AS channel
+  TO_CHAR(
+    DATE_TRUNC(HOURS,
+               CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)
+      ),
+    'YYYY-MM-DD HH24:MI:SS')                                          AS entering_hour
+  , ecd.employee_id
+  , ecd.full_name
+  , ecd.city
+  , CASE
+      WHEN cr.queue_name IN ('US-EN Cash CS Manager Escalations',
+                             'US-EN Cash CS Manager Escalation',
+                             'US-EN Cash Concierge',
+                             'US-EN Manager Escalations',
+                             'US-ES Manager Escalations')
+        THEN 'ERET'
+      ELSE 'CORE CS'
+    END                                                               AS vertical
+  , 'Voice'                                                           AS channel
   , SUM(cr.speed_to_callback / 60)                                    AS response_time_min
   , COUNT(IFF(cr.speed_to_callback IS NOT NULL, cr.contact_id, NULL)) AS count_of_callbacks
   , SUM(cr.handle_time) / 60                                          AS handle_time_min
@@ -69,7 +68,7 @@ SELECT
                      ELSE NULL
                    END)                                               AS inbound_touches_hoops
   , COUNT(DISTINCT CASE
-                     WHEN cr.is_abandoned = TRUE
+                     WHEN cr.is_abandoned
                        AND NOT cr.is_queued
                        AND cr.speed_to_callback IS NULL
                        AND DATEDIFF('second', cr.call_start_time, cr.call_end_time) <= 10
@@ -85,9 +84,9 @@ SELECT
           CASE
             WHEN cr.initiation_method IN ('API', 'INBOUND')
               AND cr.wait_time < 120
-              AND cr.agent_user_name IS NOT NULL -- why this condition
+              AND cr.agent_user_name IS NOT NULL
               THEN cr.contact_id
-            WHEN cr.initiation_method IN ('INBOUND') -- why include inbound in both conditions
+            WHEN cr.initiation_method IN ('INBOUND')
               AND cr.speed_to_callback < 1800
               THEN cr.contact_id
             ELSE NULL
@@ -98,16 +97,12 @@ SELECT
       ELSE (inbound_touches_hoops - short_abandons)
     END                                                               AS qualified_sla_touches
   , touches_in_sl / qualified_sla_touches                             AS sl_percent
-  , response_time_min / NULLIFZERO(qualified_sla_touches)             AS avg_response_time_min -- denominator: why touches in sla and not touches handles
-  , handle_time_min / NULLIFZERO(touches_handled)                     AS avg_handle_time_min   -- denominator: why touches handled and not touches in SLA
-  , AVG(cr.handle_time) / 60                                          AS avg_handle_time_min_v2
-  , AVG(cr.speed_to_callback) / 60                                    AS avg_response_time_min_v2
-  , response_time_min / count(DISTINCT IFF(cr.requested_callback, cr.contact_id, NULL))
-
+  , AVG(cr.handle_time) / 60                                          AS avg_handle_time_min
+  , AVG(cr.speed_to_callback) / 60                                    AS avg_response_time_min
 FROM app_cash_cs.preprod.call_records cr
 LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
   ON ecd.amazon_connect_id = cr.agent_user_name
   AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE BETWEEN ecd.start_date AND ecd.end_date
 WHERE
   CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE >= '2022-01-01'
--- GROUP BY 1, 2, 3, 4, 5, 6
+GROUP BY 1, 2, 3, 4, 5, 6

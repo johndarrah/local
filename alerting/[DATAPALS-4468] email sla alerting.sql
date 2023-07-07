@@ -104,3 +104,7 @@ LEFT JOIN handled_email_touches h
   AND e.employee_id = h.employee_id
   AND e.vertical = h.vertical
 --   AND e.employee_id = '44222'
+;
+
+SELECT *
+FROM app_cash_cs.public.email_touches

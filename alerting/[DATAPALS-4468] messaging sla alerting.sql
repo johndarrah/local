@@ -241,3 +241,7 @@ ORDER BY 1 DESC
 --   AND chat_start_time IS NULL
 
 
+;
+
+SELECT *
+FROM app_cash_cs.preprod.messaging_touches
