@@ -45,17 +45,6 @@ SELECT
                    END)                                               AS touches_handled
   , COUNT(DISTINCT
           CASE
-            WHEN cr.initiation_method IN ('API', 'INBOUND')
-              AND cr.wait_time < 120
-              AND cr.agent_user_name IS NOT NULL -- why this condition
-              THEN cr.contact_id
-            WHEN cr.initiation_method IN ('INBOUND')
-              AND cr.speed_to_callback < 1800
-              THEN cr.contact_id
-            ELSE NULL
-          END)                                                        AS total_in_sla
-  , COUNT(DISTINCT
-          CASE
             WHEN cr.initiation_method = 'INBOUND'
               AND cr.is_handled = TRUE
               THEN cr.contact_id
@@ -68,18 +57,52 @@ SELECT
                      ELSE NULL
                    END
   )                                                                   AS inbound_rejected_requested_callback
+  , COUNT(DISTINCT CASE
+                     WHEN cr.initiation_method = 'INBOUND'
+                       AND cr.out_of_hours = FALSE
+                       THEN cr.contact_id
+                     WHEN cr.initiation_method = 'INBOUND'
+                       AND cr.out_of_hours = TRUE
+                       AND cr.is_handled = TRUE
+                       THEN cr.contact_id
+                     ELSE NULL
+                   END)                                               AS inbound_calls_hoops
+  , COUNT(DISTINCT CASE
+                     WHEN cr.is_abandoned = TRUE
+                       AND NOT cr.is_queued -- why this if the call is already abandoned -- redundant?
+                       AND cr.speed_to_callback IS NULL -- redundant?
+                       AND DATEDIFF('second', cr.call_start_time, cr.call_end_time) <= 10
+                       THEN cr.contact_id
+                     ELSE NULL
+                   END)                                               AS short_abandons
+  , COUNT(DISTINCT
+          CASE
+            WHEN cr.initiation_method IN ('API', 'INBOUND')
+              AND cr.wait_time < 120
+              AND cr.agent_user_name IS NOT NULL -- why this condition
+              THEN cr.contact_id
+            WHEN cr.initiation_method IN ('INBOUND') -- why include inbound in both conditions
+              AND cr.speed_to_callback < 1800
+              THEN cr.contact_id
+            ELSE NULL
+          END)                                                        AS qualified_sla_touches
   , CASE
-      WHEN handled_inbound + inbound_rejected_requested_callback = 0
+      WHEN inbound_calls_hoops = 0
         THEN NULL
-      ELSE handled_inbound + inbound_rejected_requested_callback
-    END                                                               AS touches_in_sla
-  , response_time_min / NULLIFZERO(touches_in_sla)                    AS avg_response_time_min
-  , handle_time_min / NULLIFZERO(touches_handled)                     AS avg_handle_time_min
+      ELSE (inbound_calls_hoops - short_abandons)
+    END                                                               AS total_touches_sla
+  , response_time_min / NULLIFZERO(qualified_sla_touches)             AS avg_response_time_min -- denominator: why touches in sla and not touches handles
+  , handle_time_min / NULLIFZERO(touches_handled)                     AS avg_handle_time_min   -- denominator: why touches handled and not touches in SLA
 FROM app_cash_cs.preprod.call_records cr
 LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
   ON ecd.amazon_connect_id = cr.agent_user_name
   AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE BETWEEN ecd.start_date AND ecd.end_date
 WHERE
   CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE >= '2022-01-01'
--- and ecd.employee_id='43648'
+  -- and ecd.employee_id='43648'
 GROUP BY 1, 2, 3, 4, 5, 6
+
+;
+
+
+DESCRIBE TABLE app_cash_cs.preprod.call_records

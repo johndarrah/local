@@ -239,3 +239,5 @@ ORDER BY 1 DESC
 --   AND chat_record_type IN ('RD Chat', 'Internal Advocate Success')
 --   AND employee_id = '19805'
 --   AND chat_start_time IS NULL
+
+
