@@ -85,12 +85,12 @@ SELECT
               AND cr.speed_to_callback < 1800
               THEN cr.contact_id
             ELSE NULL
-          END)                                                        AS qualified_sla_touches
+          END)                                                        AS touches_in_sl
   , CASE
       WHEN inbound_calls_hoops = 0
         THEN NULL
       ELSE (inbound_calls_hoops - short_abandons)
-    END                                                               AS total_touches_sla
+    END                                                               AS qualified_sla_touches
   , response_time_min / NULLIFZERO(qualified_sla_touches)             AS avg_response_time_min -- denominator: why touches in sla and not touches handles
   , handle_time_min / NULLIFZERO(touches_handled)                     AS avg_handle_time_min   -- denominator: why touches handled and not touches in SLA
 FROM app_cash_cs.preprod.call_records cr
@@ -99,10 +99,4 @@ LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
   AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE BETWEEN ecd.start_date AND ecd.end_date
 WHERE
   CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE >= '2022-01-01'
-  -- and ecd.employee_id='43648'
 GROUP BY 1, 2, 3, 4, 5, 6
-
-;
-
-
-DESCRIBE TABLE app_cash_cs.preprod.call_records
