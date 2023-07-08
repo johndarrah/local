@@ -16,10 +16,10 @@ WITH
       , ecd.employee_id
       , ecd.full_name
       , ecd.city
-      , tqc.team_name                                                               AS vertical
-      , tqc.communication_channel                                                   AS channel
+      , tqc.team_name                                                          AS vertical
+      , tqc.communication_channel                                              AS channel
       , tqc.business_unit_name
-      , COUNT(DISTINCT et.touch_id)                                           AS entering_touches
+      , COUNT(DISTINCT et.touch_id)                                            AS entering_touches
     FROM app_cash_cs.public.email_touches et
     LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
       ON et.advocate_id = ecd.cfone_id_today
@@ -33,39 +33,27 @@ WITH
   )
   , handled_email_touches AS (
   SELECT
-    TO_CHAR(DATE_TRUNC(HOURS, et.touch_handle_time), 'YYYY-MM-DD HH24:MI:SS') AS handled_hour
+    TO_CHAR(DATE_TRUNC(HOURS, et.touch_time), 'YYYY-MM-DD HH24:MI:SS') AS handled_hour
     , et.advocate_id
     , ecd.employee_id
     , ecd.full_name
     , ecd.city
-    , tqc.team_name                                                          AS vertical
-    , tqc.communication_channel                                              AS channel
+    , tqc.team_name                                                    AS vertical
+    , tqc.communication_channel                                        AS channel
     , tqc.business_unit_name
     , COUNT(DISTINCT et.touch_id)                                      AS handled_touches
---     , SUM(et.resp) / 60, NULL))            AS response_time_min -- do we only care about response times in bh
-    , SUM(et.touch_handle_time) / 60                                               AS handle_time_min
---     , SUM(DATEDIFF(MINUTES, et.touch_time, et.))    AS touch_lifetime_min
---     , touch_lifetime_min / handle_time_min                                   AS concurrency
-    , COUNT(DISTINCT
-            CASE
-              WHEN et.touch_start_time::DATE != et.touch_time::DATE
---                 OR NOT et.in_business_hours
-                THEN et.touch_id
-            END)                                                             AS handled_backlog_touches
+    , SUM(et.response_time_minutes)                                    AS response_time_min
+    , AVG(response_time_minutes)                                       AS avg_response_time_min
+    , SUM(et.touch_handle_time) / 60                                   AS handle_time_min
+    , AVG(et.touch_handle_time) / 60                                   AS avg_handle_time_min
     , COUNT(DISTINCT
             CASE
               WHEN et.response_time_minutes <= 24
-                AND LOWER(et.inbound_type) != 'transfer' -- need to translate from here: https://github.com/squareup/app-cash-cs/blob/main/datapals_ETLS/Email%20Daily%20Agg%20ETL.sql#L93
+                AND touch_type != 'TRN' -- need to translate from here: https://github.com/squareup/app-cash-cs/blob/main/datapals_ETLS/Email%20Daily%20Agg%20ETL.sql#L93
                 THEN et.touch_id
               ELSE NULL
-            END)                                                             AS touches_in_sla
-    , COUNT(DISTINCT
-            CASE
-              WHEN et.inbound_type IN ('EML', 'EML/TRN', 'TR') -- need to translate what from here: https://github.com/squareup/app-cash-cs/blob/main/datapals_ETLS/Email%20Daily%20Agg%20ETL.sql#L90
-                THEN et.touch_id
-              ELSE NULL
-            END)                                                             AS response_handled
-    , touches_in_sla / NULLIFZERO(response_handled) * 100                    AS percent_touches_in_sla
+            END)                                                       AS touches_in_sl
+    , touches_in_sl / NULLIFZERO(handled_touches) * 100                AS sl_percent
   FROM app_cash_cs.public.email_touches et
   LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
     ON et.advocate_id = ecd.cfone_id_today
@@ -74,6 +62,7 @@ WITH
     ON LOWER(et.queue_name) = LOWER(tqc.queue_name)
   WHERE
     1 = 1
+    AND YEAR(et.touch_time) >= '2022'
     AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
   GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
 )
@@ -88,14 +77,12 @@ SELECT
   , e.business_unit_name
   , e.entering_touches
   , h.handled_touches
-  , h.handled_backlog_touches
-  , h.touches_in_sla
-  , h.response_handled
-  , h.percent_touches_in_sla
+  , h.touches_in_sl
+  , h.sl_percent
   , h.response_time_min
+  , h.avg_response_time_min
   , h.handle_time_min
-  , h.touch_lifetime_min
-  , h.concurrency
+  , h.avg_handle_time_min
 FROM entering_email_touches e
 LEFT JOIN handled_email_touches h
   ON e.entering_hour = h.handled_hour
@@ -104,5 +91,4 @@ LEFT JOIN handled_email_touches h
 --   AND e.employee_id = '44222'
 ;
 
-SELECT *
-FROM app_cash_cs.public.email_touches
+DESCRIBE TABLE app_cash_cs.public.email_touches

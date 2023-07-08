@@ -29,9 +29,11 @@ SELECT
       ELSE 'CORE CS'
     END                                                               AS vertical
   , 'Voice'                                                           AS channel
-  , SUM(cr.speed_to_callback / 60)                                    AS response_time_min
   , COUNT(IFF(cr.speed_to_callback IS NOT NULL, cr.contact_id, NULL)) AS count_of_callbacks
   , SUM(cr.handle_time) / 60                                          AS handle_time_min
+  , AVG(cr.handle_time) / 60                                          AS avg_handle_time_min
+  , SUM(cr.speed_to_callback / 60)                                    AS response_time_min
+  , AVG(cr.speed_to_callback) / 60                                    AS avg_response_time_min
   , COUNT(DISTINCT
           CASE
             WHEN cr.initiation_method = 'INBOUND'
@@ -97,8 +99,6 @@ SELECT
       ELSE (inbound_touches_hoops - short_abandons)
     END                                                               AS qualified_sla_touches
   , touches_in_sl / qualified_sla_touches                             AS sl_percent
-  , AVG(cr.handle_time) / 60                                          AS avg_handle_time_min
-  , AVG(cr.speed_to_callback) / 60                                    AS avg_response_time_min
 FROM app_cash_cs.preprod.call_records cr
 LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
   ON ecd.amazon_connect_id = cr.agent_user_name
