@@ -11,24 +11,25 @@
 -- callbacks are missing employee information
 
 SELECT
-  TO_CHAR(
-    DATE_TRUNC(HOURS,
-               CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)
-      ),
-    'YYYY-MM-DD HH24:MI:SS')                                          AS entering_hour
-  , ecd.employee_id
-  , ecd.full_name
-  , ecd.city
-  , CASE
-      WHEN cr.queue_name IN ('US-EN Cash CS Manager Escalations',
-                             'US-EN Cash CS Manager Escalation',
-                             'US-EN Cash Concierge',
-                             'US-EN Manager Escalations',
-                             'US-ES Manager Escalations')
-        THEN 'ERET'
-      ELSE 'CORE CS'
-    END                                                               AS vertical
-  , 'Voice'                                                           AS channel
+  1 = 1
+  --   TO_CHAR(
+  --     DATE_TRUNC(HOURS,
+  --                CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)
+  --       ),
+  --     'YYYY-MM-DD HH24:MI:SS')                                          AS entering_hour
+  --   , ecd.employee_id
+  --   , ecd.full_name
+  --   , ecd.city
+  --   , CASE
+  --       WHEN cr.queue_name IN ('US-EN Cash CS Manager Escalations',
+  --                              'US-EN Cash CS Manager Escalation',
+  --                              'US-EN Cash Concierge',
+  --                              'US-EN Manager Escalations',
+  --                              'US-ES Manager Escalations')
+  --         THEN 'ERET'
+  --       ELSE 'CORE CS'
+  --     END                                                               AS vertical
+  --   , 'Voice'                                                           AS channel
   , COUNT(IFF(cr.speed_to_callback IS NOT NULL, cr.contact_id, NULL)) AS count_of_callbacks
   , SUM(cr.handle_time) / 60                                          AS handle_time_min
   , AVG(cr.handle_time) / 60                                          AS avg_handle_time_min
@@ -105,4 +106,4 @@ LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
   AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE BETWEEN ecd.start_date AND ecd.end_date
 WHERE
   CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE >= '2022-01-01'
-GROUP BY 1, 2, 3, 4, 5, 6
+-- GROUP BY 1, 2, 3, 4, 5, 6

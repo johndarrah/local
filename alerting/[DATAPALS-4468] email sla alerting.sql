@@ -53,7 +53,7 @@ WITH
                 THEN et.touch_id
               ELSE NULL
             END)                                                       AS touches_in_sl
-    , touches_in_sl / NULLIFZERO(handled_touches) * 100                AS sl_percent
+    , touches_in_sl / NULLIFZERO(handled_touches)                      AS sl_percent
   FROM app_cash_cs.public.email_touches et
   LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
     ON et.advocate_id = ecd.cfone_id_today
@@ -88,7 +88,7 @@ LEFT JOIN handled_email_touches h
   ON e.entering_hour = h.handled_hour
   AND e.employee_id = h.employee_id
   AND e.vertical = h.vertical
---   AND e.employee_id = '44222'
+WHERE
+  1 = 1
+  AND e.employee_id = '44222'
 ;
-
-DESCRIBE TABLE app_cash_cs.public.email_touches
