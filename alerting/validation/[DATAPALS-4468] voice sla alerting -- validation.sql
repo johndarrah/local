@@ -55,13 +55,6 @@ SELECT
           END)                                                        AS handled_inbound
   , COUNT(DISTINCT CASE
                      WHEN cr.initiation_method = 'INBOUND'
-                       AND cr.requested_callback = TRUE
-                       THEN cr.contact_id
-                     ELSE NULL
-                   END
-  )                                                                   AS inbound_rejected_requested_callback
-  , COUNT(DISTINCT CASE
-                     WHEN cr.initiation_method = 'INBOUND'
                        AND cr.out_of_hours = FALSE
                        THEN cr.contact_id
                      WHEN cr.initiation_method = 'INBOUND'

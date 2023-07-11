@@ -55,8 +55,8 @@ WITH
             END)                                                       AS touches_in_sl
     , touches_in_sl / NULLIFZERO(handled_touches)                      AS sl_percent
   FROM app_cash_cs.public.email_touches et
-  LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
-    ON et.advocate_id = ecd.cfone_id_today
+--   LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
+--     ON et.advocate_id = ecd.cfone_id_today
     AND et.touch_time ::DATE BETWEEN ecd.start_date AND ecd.end_date
   LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(et.queue_name) = LOWER(tqc.queue_name)

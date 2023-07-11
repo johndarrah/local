@@ -27,18 +27,11 @@ WITH
                    CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_start_time)
           ),
         'YYYY-MM-DD HH24:MI:SS')    AS entering_hour
-      , ecd.employee_id
-      , ecd.full_name
-      , ecd.city
       , tqc.team_name               AS vertical
       , tqc.communication_channel   AS channel
       , tqc.business_unit_name
       , COUNT(DISTINCT mt.touch_start_id) AS entering_touches
     FROM app_cash_cs.preprod.messaging_touches mt
-    LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
-      ON mt.advocate_id = ecd.cfone_id_today
-      AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_start_time)::DATE
-        BETWEEN ecd.start_date AND ecd.end_date
     LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
       ON LOWER(mt.queue_name) = LOWER(tqc.queue_name)
       --     LEFT JOIN app_cash_cs.public.live_agent_chat_escalations lace
@@ -47,7 +40,7 @@ WITH
     WHERE
       YEAR(mt.touch_start_time) >= '2022' --note that some chats may be resolved without interaction
       AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
-    GROUP BY 1, 2, 3, 4, 5, 6, 7
+    GROUP BY 1, 2, 3, 4
   )
   , handled_messaging_touches AS (
   SELECT
@@ -57,9 +50,9 @@ WITH
         ),
       'YYYY-MM-DD HH24:MI:SS')                                            AS handled_hour
     , mt.advocate_id
-    , ecd.employee_id
-    , ecd.full_name
-    , ecd.city
+--     , ecd.employee_id
+--     , ecd.full_name
+--     , ecd.city
     , tqc.team_name                                                       AS vertical
     , tqc.communication_channel                                           AS channel
     , tqc.business_unit_name
@@ -86,10 +79,10 @@ WITH
     , COUNT(DISTINCT IFF(mt.in_business_hours, mt.touch_id, NULL))        AS qualified_sla_touches
     , touches_in_sl / NULLIFZERO(qualified_sla_touches) * 100             AS sl_percent
   FROM app_cash_cs.preprod.messaging_touches mt
-  LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
-    ON mt.advocate_id = ecd.cfone_id_today
-    AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time)::DATE
-      BETWEEN ecd.start_date AND ecd.end_date
+--   LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
+--     ON mt.advocate_id = ecd.cfone_id_today
+--     AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time)::DATE
+--       BETWEEN ecd.start_date AND ecd.end_date
   LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(mt.queue_name) = LOWER(tqc.queue_name)
     --   LEFT JOIN app_cash_cs.public.live_agent_chat_escalations lace
@@ -100,7 +93,7 @@ WITH
     AND YEAR(mt.touch_assignment_time) >= '2022'
     AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
     --     AND lace.parent_case_id IS NULL -- exclude live agent
-  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+  GROUP BY 1, 2, 3, 4, 5
 )
   , entering_rd_ast_touches AS (
   SELECT
@@ -109,9 +102,9 @@ WITH
                  CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', chat_created_at)
         ),
       'YYYY-MM-DD HH24:MI:SS')                       AS entering_hour
-    , chat_advocate_employee_id                      AS employee_id
-    , chat_advocate                                  AS full_name
-    , chat_advocate_city                             AS city
+--     , chat_advocate_employee_id                      AS employee_id
+--     , chat_advocate                                  AS full_name
+--     , chat_advocate_city                             AS city
     , IFF(chat_record_type = 'RD Chat', 'RD', 'AST') AS vertical
     , 'CHAT'                                         AS channel
     , 'CUSTOMER SUCCESS - CORE'                      AS business_unit_name
@@ -120,7 +113,7 @@ WITH
   WHERE
     YEAR(chat_created_at) >= '2022'
     AND chat_record_type IN ('RD Chat', 'Internal Advocate Success')
-  GROUP BY 1, 2, 3, 4, 5, 6
+  GROUP BY 1, 2, 3,4
 )
   , handled_rd_ast_touches AS (
   SELECT
@@ -129,9 +122,9 @@ WITH
                  CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', chat_start_time)
         ),
       'YYYY-MM-DD HH24:MI:SS')                       AS handled_hour
-    , chat_advocate_employee_id                      AS employee_id
-    , chat_advocate                                  AS full_name
-    , chat_advocate_city                             AS city
+--     , chat_advocate_employee_id                      AS employee_id
+--     , chat_advocate                                  AS full_name
+--     , chat_advocate_city                             AS city
     , IFF(chat_record_type = 'RD Chat', 'RD', 'AST') AS vertical
     , 'CHAT'                                         AS channel
     , 'CUSTOMER SUCCESS - CORE'                      AS business_unit_name
@@ -173,15 +166,15 @@ WITH
   WHERE
     YEAR(chat_created_at) >= '2022'
     AND chat_record_type IN ('RD Chat', 'Internal Advocate Success')
-  GROUP BY 1, 2, 3, 4, 5, 6
+  GROUP BY 1, 2, 3, 4
 )
 
   -- messaging touches
 SELECT
   e.entering_hour
-  , e.employee_id
-  , e.full_name
-  , e.city
+--   , h.employee_id
+--   , h.full_name
+--   , h.city
   , e.vertical
   , e.channel
   , e.business_unit_name
@@ -200,11 +193,9 @@ SELECT
 FROM entering_message_touches e
 LEFT JOIN handled_messaging_touches h
   ON e.entering_hour = h.handled_hour
-  AND e.employee_id = h.employee_id
   AND e.vertical = h.vertical
 WHERE
   1 = 1
-  AND e.employee_id = '40706'
 and entering_hour='2023-07-06 20:00:00'
 
 UNION
@@ -212,9 +203,6 @@ UNION
 -- AST and RD touches
 SELECT
   e.entering_hour
-  , e.employee_id
-  , e.full_name
-  , e.city
   , e.vertical
   , e.channel
   , e.business_unit_name
@@ -234,9 +222,9 @@ FROM entering_rd_ast_touches AS e
 LEFT JOIN handled_rd_ast_touches AS h
   ON e.entering_hour = h.handled_hour
   AND e.vertical = h.vertical
-  AND e.employee_id = h.employee_id
-WHERE
-  e.employee_id = '19805'
+--   AND e.employee_id = h.employee_id
+-- WHERE
+--   e.employee_id = '19805'
 
 ORDER BY 1 DESC
 

@@ -16,9 +16,9 @@ SELECT
                CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)
       ),
     'YYYY-MM-DD HH24:MI:SS')                                          AS entering_hour
-  , ecd.employee_id
-  , ecd.full_name
-  , ecd.city
+--   , ecd.employee_id
+--   , ecd.full_name
+--   , ecd.city
   , CASE
       WHEN cr.queue_name IN ('US-EN Cash CS Manager Escalations',
                              'US-EN Cash CS Manager Escalation',
@@ -32,6 +32,7 @@ SELECT
   , COUNT(IFF(cr.speed_to_callback IS NOT NULL, cr.contact_id, NULL)) AS count_of_callbacks
   , SUM(cr.handle_time) / 60                                          AS handle_time_min
   , AVG(cr.handle_time) / 60                                          AS avg_handle_time_min
+  , SUM(wrap_time) / 60                                               AS wrap_time_min
   , SUM(cr.speed_to_callback / 60)                                    AS response_time_min
   , AVG(cr.speed_to_callback) / 60                                    AS avg_response_time_min
   , COUNT(DISTINCT
@@ -52,13 +53,6 @@ SELECT
               THEN cr.contact_id
             ELSE NULL
           END)                                                        AS handled_inbound
-  , COUNT(DISTINCT CASE
-                     WHEN cr.initiation_method = 'INBOUND'
-                       AND cr.requested_callback = TRUE
-                       THEN cr.contact_id
-                     ELSE NULL
-                   END
-  )                                                                   AS inbound_rejected_requested_callback
   , COUNT(DISTINCT CASE
                      WHEN cr.initiation_method = 'INBOUND'
                        AND cr.out_of_hours = FALSE
@@ -100,9 +94,9 @@ SELECT
     END                                                               AS qualified_sla_touches
   , touches_in_sl / qualified_sla_touches                             AS sl_percent
 FROM app_cash_cs.preprod.call_records cr
-LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
-  ON ecd.amazon_connect_id = cr.agent_user_name
-  AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE BETWEEN ecd.start_date AND ecd.end_date
+-- LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
+--   ON ecd.amazon_connect_id = cr.agent_user_name
+--   AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE BETWEEN ecd.start_date AND ecd.end_date
 WHERE
   CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE >= '2022-01-01'
-GROUP BY 1, 2, 3, 4, 5, 6
+GROUP BY 1, 2, 3
