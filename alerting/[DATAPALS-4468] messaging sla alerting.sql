@@ -24,7 +24,7 @@ WITH
     SELECT
       TO_CHAR(
         DATE_TRUNC(HOURS,
-                   CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time)
+                   CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_start_time)
           ),
         'YYYY-MM-DD HH24:MI:SS')    AS entering_hour
       , ecd.employee_id
@@ -33,11 +33,11 @@ WITH
       , tqc.team_name               AS vertical
       , tqc.communication_channel   AS channel
       , tqc.business_unit_name
-      , COUNT(DISTINCT mt.touch_id) AS entering_touches
+      , COUNT(DISTINCT mt.touch_start_id) AS entering_touches
     FROM app_cash_cs.preprod.messaging_touches mt
     LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
       ON mt.advocate_id = ecd.cfone_id_today
-      AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time)::DATE
+      AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_start_time)::DATE
         BETWEEN ecd.start_date AND ecd.end_date
     LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
       ON LOWER(mt.queue_name) = LOWER(tqc.queue_name)
@@ -45,7 +45,7 @@ WITH
       --       ON mt.case_id = lace.parent_case_id
       --       AND lace.chat_record_type IN ('RD Chat', 'Internal Advocate Success')
     WHERE
-      YEAR(mt.touch_assignment_time) >= '2022' --note that some chats may be resolved without interaction
+      YEAR(mt.touch_start_time) >= '2022' --note that some chats may be resolved without interaction
       AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
     GROUP BY 1, 2, 3, 4, 5, 6, 7
   )
@@ -53,7 +53,7 @@ WITH
   SELECT
     TO_CHAR(
       DATE_TRUNC(HOURS,
-                 CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_start_time)
+                 CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time)
         ),
       'YYYY-MM-DD HH24:MI:SS')                                            AS handled_hour
     , mt.advocate_id
@@ -88,7 +88,7 @@ WITH
   FROM app_cash_cs.preprod.messaging_touches mt
   LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
     ON mt.advocate_id = ecd.cfone_id_today
-    AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_start_time)::DATE
+    AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time)::DATE
       BETWEEN ecd.start_date AND ecd.end_date
   LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(mt.queue_name) = LOWER(tqc.queue_name)
@@ -97,7 +97,7 @@ WITH
     --     AND lace.chat_record_type IN ('RD Chat', 'Internal Advocate Success')
   WHERE
     1 = 1
-    AND YEAR(mt.touch_start_time) >= '2022'
+    AND YEAR(mt.touch_assignment_time) >= '2022'
     AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
     --     AND lace.parent_case_id IS NULL -- exclude live agent
   GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
