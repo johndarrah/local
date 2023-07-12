@@ -25,14 +25,14 @@ WITH
   )
   , entering_message_touches AS (
   SELECT
-    eh.ts
+    ht.ts
     , tqc.team_name                     AS vertical
     , tqc.communication_channel         AS channel
     , tqc.business_unit_name
     , COUNT(DISTINCT mt.touch_start_id) AS entering_touches
-  FROM hour_ts eh
+  FROM hour_ts ht
   LEFT JOIN app_cash_cs.preprod.messaging_touches mt
-    ON eh.hour_interval = DATE_TRUNC('hour', CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_start_time))
+    ON ht.hour_interval = DATE_TRUNC('hour', CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_start_time))
   LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(mt.queue_name) = LOWER(tqc.queue_name)
   WHERE
@@ -42,7 +42,7 @@ WITH
 )
   , handled_messaging_touches AS (
   SELECT
-    eh.ts
+    ht.ts
     , tqc.team_name                                                       AS vertical
     , tqc.communication_channel                                           AS channel
     , tqc.business_unit_name
@@ -68,9 +68,9 @@ WITH
             END)                                                          AS touches_in_sl
     , COUNT(DISTINCT IFF(mt.in_business_hours, mt.touch_id, NULL))        AS qualified_sla_touches
     , touches_in_sl / NULLIFZERO(qualified_sla_touches) * 100             AS sl_percent
-  FROM hour_ts eh
+  FROM hour_ts ht
   LEFT JOIN app_cash_cs.preprod.messaging_touches mt
-    ON eh.hour_interval = DATE_TRUNC('hour', CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time))
+    ON ht.hour_interval = DATE_TRUNC('hour', CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time))
   LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(mt.queue_name) = LOWER(tqc.queue_name)
   WHERE
@@ -80,21 +80,21 @@ WITH
 )
   , entering_rd_ast_touches AS (
   SELECT
-    eh.ts
+    ht.ts
     , IFF(e.chat_record_type = 'RD Chat', 'RD', 'AST') AS vertical
     , 'CHAT'                                           AS channel
     , 'CUSTOMER SUCCESS - CORE'                        AS business_unit_name
     , COUNT(DISTINCT e.chat_transcript_id)             AS entering_touches
-  FROM hour_ts eh
+  FROM hour_ts ht
   LEFT JOIN app_cash_cs.public.live_agent_chat_escalations e
-    ON eh.hour_interval = DATE_TRUNC(HOURS, CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', e.chat_created_at))
+    ON ht.hour_interval = DATE_TRUNC(HOURS, CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', e.chat_created_at))
   WHERE
     chat_record_type IN ('RD Chat', 'Internal Advocate Success')
   GROUP BY 1, 2, 3, 4
 )
   , handled_rd_ast_touches AS (
   SELECT
-    eh.ts
+    ht.ts
     , IFF(e.chat_record_type = 'RD Chat', 'RD', 'AST') AS vertical
     , 'CHAT'                                           AS channel
     , 'CUSTOMER SUCCESS - CORE'                        AS business_unit_name
@@ -132,9 +132,9 @@ WITH
             END)                                       AS abandoned_touches
     , handled_touches - abandoned_touches              AS qualified_sl_touches
     , touches_in_sl / qualified_sl_touches * 100       AS sl_percent
-  FROM hour_ts eh
+  FROM hour_ts ht
   LEFT JOIN app_cash_cs.public.live_agent_chat_escalations e
-    ON eh.hour_interval = DATE_TRUNC(HOURS, CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', e.chat_start_time))
+    ON ht.hour_interval = DATE_TRUNC(HOURS, CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', e.chat_start_time))
   WHERE
     chat_record_type IN ('RD Chat', 'Internal Advocate Success')
   GROUP BY 1, 2, 3, 4

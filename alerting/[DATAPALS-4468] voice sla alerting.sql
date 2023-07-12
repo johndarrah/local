@@ -10,15 +10,19 @@
 -- timestamps in UTC
 -- callbacks are missing employee information
 
+WITH
+  hour_ts AS (
+    SELECT DISTINCT
+      interval_start_time                                                  AS hour_interval
+      , TO_CHAR(DATE_TRUNC(HOURS, hour_interval), 'YYYY-MM-DD HH24:MI:SS') AS ts
+    FROM app_cash_cs.public.dim_date_time
+    WHERE
+      YEAR(report_date) >= 2022
+      AND report_date <= CURRENT_DATE
+      AND EXTRACT(MINUTE FROM interval_start_time) = 0
+  )
 SELECT
-  TO_CHAR(
-    DATE_TRUNC(HOURS,
-               CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)
-      ),
-    'YYYY-MM-DD HH24:MI:SS')                                          AS entering_hour
-  --   , ecd.employee_id
-  --   , ecd.full_name
-  --   , ecd.city
+  ht.ts
   , CASE
       WHEN cr.queue_name IN ('US-EN Cash CS Manager Escalations',
                              'US-EN Cash CS Manager Escalation',
@@ -96,10 +100,7 @@ SELECT
       ELSE (inbound_touches_hoops - short_abandons)
     END                                                               AS qualified_sla_touches
   , touches_in_sl / qualified_sla_touches                             AS sl_percent
-FROM app_cash_cs.preprod.call_records cr
-  -- LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
-  --   ON ecd.amazon_connect_id = cr.agent_user_name
-  --   AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE BETWEEN ecd.start_date AND ecd.end_date
-WHERE
-  CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time)::DATE >= '2022-01-01'
+FROM hour_ts ht
+LEFT JOIN app_cash_cs.preprod.call_records cr
+  ON ht.hour_interval = DATE_TRUNC(HOURS, CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', cr.call_start_time))
 GROUP BY 1, 2, 3
