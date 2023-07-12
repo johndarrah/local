@@ -33,6 +33,10 @@ SELECT
   , COUNT(IFF(cr.speed_to_callback IS NOT NULL, cr.contact_id, NULL)) AS count_of_callbacks
   , SUM(cr.handle_time) / 60                                          AS handle_time_min
   , AVG(cr.handle_time) / 60                                          AS avg_handle_time_min
+  , SUM(wrap_time) / 60                                               AS wrap_time_min
+  , AVG(wrap_time) / 60                                               AS avg_wrap_time_min
+  , SUM(hold_time) / 60                                               AS hold_time_min
+  , AVG(hold_time) / 60                                               AS avg_hold_time_min
   , SUM(cr.speed_to_callback / 60)                                    AS response_time_min
   , AVG(cr.speed_to_callback) / 60                                    AS avg_response_time_min
   , COUNT(DISTINCT
