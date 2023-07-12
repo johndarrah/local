@@ -12,47 +12,37 @@
 -- entering date = when the touch was created/assigned
 -- handle date = when the touch was started
 
--- app_cash_cs.public.live_agent_chat_escalations in UT but we don't have enough data to parse them out
-
--- For handle time and touches, we're switching to Universal Touches
--- -- I've found a few issues with app_cash_cs.preprod.messaging_touches and DMC has voiced to me that they plan on only fixing UT moving forward
--- The volume and SLA's will be when the touch occurred, not when it was assigned
--- -- the assignment date is based on when the case goes from the queue to the advocate
-
 WITH
-  entering_message_touches AS (
-    SELECT
-      TO_CHAR(
-        DATE_TRUNC(HOURS,
-                   CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_start_time)
-          ),
-        'YYYY-MM-DD HH24:MI:SS')    AS entering_hour
-      , tqc.team_name               AS vertical
-      , tqc.communication_channel   AS channel
-      , tqc.business_unit_name
-      , COUNT(DISTINCT mt.touch_start_id) AS entering_touches
-    FROM app_cash_cs.preprod.messaging_touches mt
-    LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
-      ON LOWER(mt.queue_name) = LOWER(tqc.queue_name)
-      --     LEFT JOIN app_cash_cs.public.live_agent_chat_escalations lace
-      --       ON mt.case_id = lace.parent_case_id
-      --       AND lace.chat_record_type IN ('RD Chat', 'Internal Advocate Success')
+  hour_ts AS (
+    SELECT DISTINCT
+      interval_start_time                                                  AS hour_interval
+      , TO_CHAR(DATE_TRUNC(HOURS, hour_interval), 'YYYY-MM-DD HH24:MI:SS') AS ts
+    FROM app_cash_cs.public.dim_date_time
     WHERE
-      YEAR(mt.touch_start_time) >= '2022' --note that some chats may be resolved without interaction
-      AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
-    GROUP BY 1, 2, 3, 4
+      YEAR(report_date) >= 2022
+      AND report_date <= CURRENT_DATE
+      AND EXTRACT(MINUTE FROM interval_start_time) = 0
   )
+  , entering_message_touches AS (
+  SELECT
+    eh.ts
+    , tqc.team_name                     AS vertical
+    , tqc.communication_channel         AS channel
+    , tqc.business_unit_name
+    , COUNT(DISTINCT mt.touch_start_id) AS entering_touches
+  FROM hour_ts eh
+  LEFT JOIN app_cash_cs.preprod.messaging_touches mt
+    ON eh.hour_interval = DATE_TRUNC('hour', CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_start_time))
+  LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
+    ON LOWER(mt.queue_name) = LOWER(tqc.queue_name)
+  WHERE
+    NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
+    AND hour_interval = '2023-07-06 20:00:00'
+  GROUP BY 1, 2, 3, 4
+)
   , handled_messaging_touches AS (
   SELECT
-    TO_CHAR(
-      DATE_TRUNC(HOURS,
-                 CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time)
-        ),
-      'YYYY-MM-DD HH24:MI:SS')                                            AS handled_hour
-    , mt.advocate_id
---     , ecd.employee_id
---     , ecd.full_name
---     , ecd.city
+    eh.ts
     , tqc.team_name                                                       AS vertical
     , tqc.communication_channel                                           AS channel
     , tqc.business_unit_name
@@ -78,103 +68,81 @@ WITH
             END)                                                          AS touches_in_sl
     , COUNT(DISTINCT IFF(mt.in_business_hours, mt.touch_id, NULL))        AS qualified_sla_touches
     , touches_in_sl / NULLIFZERO(qualified_sla_touches) * 100             AS sl_percent
-  FROM app_cash_cs.preprod.messaging_touches mt
---   LEFT JOIN app_cash_cs.public.employee_cash_dim ecd
---     ON mt.advocate_id = ecd.cfone_id_today
---     AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time)::DATE
---       BETWEEN ecd.start_date AND ecd.end_date
+  FROM hour_ts eh
+  LEFT JOIN app_cash_cs.preprod.messaging_touches mt
+    ON eh.hour_interval = DATE_TRUNC('hour', CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time))
   LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
     ON LOWER(mt.queue_name) = LOWER(tqc.queue_name)
-    --   LEFT JOIN app_cash_cs.public.live_agent_chat_escalations lace
-    --     ON mt.case_id = lace.parent_case_id
-    --     AND lace.chat_record_type IN ('RD Chat', 'Internal Advocate Success')
   WHERE
-    1 = 1
-    AND YEAR(mt.touch_assignment_time) >= '2022'
-    AND NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
-    --     AND lace.parent_case_id IS NULL -- exclude live agent
-  GROUP BY 1, 2, 3, 4, 5
+    NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
+    AND ts = '2023-07-06 20:00:00'
+  GROUP BY 1, 2, 3, 4
 )
   , entering_rd_ast_touches AS (
   SELECT
-    TO_CHAR(
-      DATE_TRUNC(HOURS,
-                 CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', chat_created_at)
-        ),
-      'YYYY-MM-DD HH24:MI:SS')                       AS entering_hour
---     , chat_advocate_employee_id                      AS employee_id
---     , chat_advocate                                  AS full_name
---     , chat_advocate_city                             AS city
-    , IFF(chat_record_type = 'RD Chat', 'RD', 'AST') AS vertical
-    , 'CHAT'                                         AS channel
-    , 'CUSTOMER SUCCESS - CORE'                      AS business_unit_name
-    , COUNT(DISTINCT chat_transcript_id)             AS entering_touches
-  FROM app_cash_cs.public.live_agent_chat_escalations
+    eh.ts
+    , IFF(e.chat_record_type = 'RD Chat', 'RD', 'AST') AS vertical
+    , 'CHAT'                                           AS channel
+    , 'CUSTOMER SUCCESS - CORE'                        AS business_unit_name
+    , COUNT(DISTINCT e.chat_transcript_id)             AS entering_touches
+  FROM hour_ts eh
+  LEFT JOIN app_cash_cs.public.live_agent_chat_escalations e
+    ON eh.hour_interval = DATE_TRUNC(HOURS, CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', e.chat_created_at))
   WHERE
-    YEAR(chat_created_at) >= '2022'
-    AND chat_record_type IN ('RD Chat', 'Internal Advocate Success')
-  GROUP BY 1, 2, 3,4
+    chat_record_type IN ('RD Chat', 'Internal Advocate Success')
+  GROUP BY 1, 2, 3, 4
 )
   , handled_rd_ast_touches AS (
   SELECT
-    TO_CHAR(
-      DATE_TRUNC(HOURS,
-                 CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', chat_start_time)
-        ),
-      'YYYY-MM-DD HH24:MI:SS')                       AS handled_hour
---     , chat_advocate_employee_id                      AS employee_id
---     , chat_advocate                                  AS full_name
---     , chat_advocate_city                             AS city
-    , IFF(chat_record_type = 'RD Chat', 'RD', 'AST') AS vertical
-    , 'CHAT'                                         AS channel
-    , 'CUSTOMER SUCCESS - CORE'                      AS business_unit_name
-    , COUNT(DISTINCT chat_transcript_id)             AS handled_touches
-    , NULL                                           AS handled_backlog_touches
-    , SUM(chat_handle_time / 60)                     AS handle_time_min
-    , AVG(chat_handle_time) / 60                     AS avg_handle_time_min
-    , SUM(chat_handle_time / 60)                     AS touch_lifetime_min
-    , touch_lifetime_min / handle_time_min           AS concurrency
-    , NULL                                           AS response_time_min
-    , NULL                                           AS avg_response_time_min
+    eh.ts
+    , IFF(e.chat_record_type = 'RD Chat', 'RD', 'AST') AS vertical
+    , 'CHAT'                                           AS channel
+    , 'CUSTOMER SUCCESS - CORE'                        AS business_unit_name
+    , COUNT(DISTINCT e.chat_transcript_id)             AS handled_touches
+    , NULL                                             AS handled_backlog_touches
+    , SUM(e.chat_handle_time / 60)                     AS handle_time_min
+    , AVG(e.chat_handle_time) / 60                     AS avg_handle_time_min
+    , SUM(e.chat_handle_time / 60)                     AS touch_lifetime_min
+    , touch_lifetime_min / handle_time_min             AS concurrency
+    , NULL                                             AS response_time_min
+    , NULL                                             AS avg_response_time_min
     , COUNT(DISTINCT
             CASE
-              WHEN chat_record_type = 'RD Chat'
-                AND chat_wait_time <= 60
-                AND chat_handle_time > 0
-                THEN chat_transcript_id
-              WHEN chat_record_type = 'Internal Advocate Success'
-                AND chat_wait_time <= 180
-                AND chat_handle_time > 0
-                THEN chat_transcript_id
+              WHEN e.chat_record_type = 'RD Chat'
+                AND e.chat_wait_time <= 60
+                AND e.chat_handle_time > 0
+                THEN e.chat_transcript_id
+              WHEN e.chat_record_type = 'Internal Advocate Success'
+                AND e.chat_wait_time <= 180
+                AND e.chat_handle_time > 0
+                THEN e.chat_transcript_id
               ELSE NULL
-            END)                                     AS touches_in_sl
+            END)                                       AS touches_in_sl
     , COUNT(DISTINCT
             CASE
-              WHEN chat_record_type = 'RD Chat'
-                AND chat_wait_time <= 60
-                AND chat_handle_time = 0
-                THEN chat_transcript_id
-              WHEN chat_record_type = 'Internal Advocate Success'
-                AND chat_wait_time <= 180
-                AND chat_handle_time = 0
-                THEN chat_transcript_id
+              WHEN e.chat_record_type = 'RD Chat'
+                AND e.chat_wait_time <= 60
+                AND e.chat_handle_time = 0
+                THEN e.chat_transcript_id
+              WHEN e.chat_record_type = 'Internal Advocate Success'
+                AND e.chat_wait_time <= 180
+                AND e.chat_handle_time = 0
+                THEN e.chat_transcript_id
               ELSE NULL
-            END)                                     AS abandoned_touches
-    , handled_touches - abandoned_touches            AS qualified_sl_touches
-    , touches_in_sl / qualified_sl_touches * 100     AS sl_percent
-  FROM app_cash_cs.public.live_agent_chat_escalations
+            END)                                       AS abandoned_touches
+    , handled_touches - abandoned_touches              AS qualified_sl_touches
+    , touches_in_sl / qualified_sl_touches * 100       AS sl_percent
+  FROM hour_ts eh
+  LEFT JOIN app_cash_cs.public.live_agent_chat_escalations e
+    ON eh.hour_interval = DATE_TRUNC(HOURS, CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', e.chat_start_time))
   WHERE
-    YEAR(chat_created_at) >= '2022'
-    AND chat_record_type IN ('RD Chat', 'Internal Advocate Success')
+    chat_record_type IN ('RD Chat', 'Internal Advocate Success')
   GROUP BY 1, 2, 3, 4
 )
-
   -- messaging touches
+
 SELECT
-  e.entering_hour
---   , h.employee_id
---   , h.full_name
---   , h.city
+  e.ts
   , e.vertical
   , e.channel
   , e.business_unit_name
@@ -192,17 +160,17 @@ SELECT
   , h.concurrency
 FROM entering_message_touches e
 LEFT JOIN handled_messaging_touches h
-  ON e.entering_hour = h.handled_hour
+  ON e.ts = h.ts
   AND e.vertical = h.vertical
 WHERE
   1 = 1
-and entering_hour='2023-07-06 20:00:00'
+  AND e.ts = '2023-07-06 20:00:00'
 
 UNION
 
--- AST and RD touches
+--   AST and RD touches
 SELECT
-  e.entering_hour
+  e.ts
   , e.vertical
   , e.channel
   , e.business_unit_name
@@ -220,29 +188,10 @@ SELECT
   , h.concurrency
 FROM entering_rd_ast_touches AS e
 LEFT JOIN handled_rd_ast_touches AS h
-  ON e.entering_hour = h.handled_hour
+  ON e.ts = h.ts
   AND e.vertical = h.vertical
---   AND e.employee_id = h.employee_id
--- WHERE
---   e.employee_id = '19805'
-
+WHERE
+  1 = 1
+  AND e.ts = '2023-07-06 20:00:00'
 ORDER BY 1 DESC
 
-
--- -- QA
-
--- live chats without a start time
--- SELECT
---   chat_advocate_employee_id AS employee_id
---   , chat_advocate           AS full_name
---   , chat_advocate_city      AS city
---   , chat_record_type
---   , chat_start_time
---   , chat_end_time
---   , *
--- FROM app_cash_cs.public.live_agent_chat_escalations
--- WHERE
---   YEAR(chat_created_at) >= '2022'
---   AND chat_record_type IN ('RD Chat', 'Internal Advocate Success')
---   AND employee_id = '19805'
---   AND chat_start_time IS NULL
