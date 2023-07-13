@@ -30,6 +30,7 @@ WITH
     ON LOWER(et.queue_name) = LOWER(tqc.queue_name)
   WHERE
     NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
+    AND tqc.communication_channel = 'EMAIL'
 )
   , handled_email_touches AS (
   SELECT
@@ -53,6 +54,7 @@ WITH
     ON LOWER(et.queue_name) = LOWER(tqc.queue_name)
   WHERE
     NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
+    AND tqc.communication_channel = 'EMAIL'
 )
 
 SELECT
