@@ -15,8 +15,8 @@
 WITH
   hour_ts AS (
     SELECT DISTINCT
-      interval_start_time                                                  AS hour_interval
-      , TO_CHAR(DATE_TRUNC(HOURS, hour_interval), 'YYYY-MM-DD HH24:MI:SS') AS ts
+      interval_start_time                                                        AS hour_interval
+      , TO_CHAR(DATE_TRUNC(HOURS, interval_start_time), 'YYYY-MM-DD HH24:MI:SS') AS ts
     FROM app_cash_cs.public.dim_date_time
     WHERE
       YEAR(report_date) >= 2022
