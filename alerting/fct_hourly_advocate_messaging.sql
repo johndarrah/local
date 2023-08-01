@@ -1,13 +1,50 @@
--- author: johndarrah
--- description: messaging SLA metrics for alerting
+/************************************************************************************************************
+Owner: John Darrah (@johndarrah)
+Back Up: Mayuri Magdum (@mayurium)
+Business Purpose: Denormalized fact table that aggregates messaging touch data at the queue and advocate level
+Date Range: 2018-01-01 onward
+Time Zone: UTC
+Composite key: ts + queue_id
 
+Other relationships:
+
+
+Change Log:
+2023-08-01 - table created by johndarrah for intraday tableau reporting - https://block.atlassian.net/browse/DATAPALS-4468
+
+
+Notes:
+* Averages aren't included here since the data may be aggregated further downstream and it would lead to data inaccuracies
+* Incoming volume is excluded since that hasn't been assigned to an advocate
+************************************************************************************************************/
+CREATE TABLE IF NOT EXISTS personal_johndarrah.public.fct_hourly_advocate_messaging (
+  ts                      TIMESTAMP_NTZ COMMENT 'Touch timestamp in UTC',
+  employee_id             VARCHAR COMMENT 'Advocate employee ID',
+  advocate_name           VARCHAR COMMENT 'Advocate Name',
+  advocate_city           VARCHAR COMMENT 'Advocate City',
+  queue_id                VARCHAR COMMENT 'Touch queue ID',
+  team_name               VARCHAR COMMENT 'Touch team name',
+  channel                 VARCHAR COMMENT 'Touch channel',
+  business_unit_name      VARCHAR COMMENT 'Touch business_unit_name',
+  handled_touches         NUMBER COMMENT 'Handled Touches',
+  response_time_min       NUMBER COMMENT 'Touch response time in minutes',
+  handle_time_min         NUMBER COMMENT 'Touch handle_time in minutes',
+  touch_lifetime_min      NUMBER COMMENT 'Touch touch_lifetime in minutes',
+  concurrency             NUMBER COMMENT 'Touches being handled at the same time',
+  handled_backlog_touches NUMBER COMMENT 'Touch handled_backlog_touches',
+  touches_in_sl           NUMBER COMMENT 'Touches in Service Level',
+  qualified_sla_touches   NUMBER COMMENT 'Qualified SLA touches (in business hours,etc)',
+  sl_percent              NUMBER COMMENT 'Touch Service Level Percent '
+)
+;
+
+INSERT OVERWRITE INTO
+  personal_johndarrah.public.fct_hourly_advocate_messaging
 WITH
   hour_ts AS (
     SELECT DISTINCT
       interval_start_time                                                        AS hour_interval
       , TO_CHAR(DATE_TRUNC(HOURS, interval_start_time), 'YYYY-MM-DD HH24:MI:SS') AS ts
-      , LAG(ts, 24) OVER (ORDER BY ts)                                           AS _1_day
-      , LAG(ts, 168) OVER (ORDER BY ts)                                          AS _1_week
     FROM app_cash_cs.public.dim_date_time
     WHERE
       YEAR(report_date) >= 2022
@@ -160,3 +197,11 @@ WHERE
   1 = 1
   AND ts::DATE = '2023-07-06'
   AND employee_id = '44835'
+;
+
+SELECT *
+FROM personal_johndarrah.public.fct_hourly_advocate_messaging
+;
+
+-- DROP TABLE personal_johndarrah.public.fct_hourly_advocate_messaging
+DESCRIBE table personal_johndarrah.public.fct_hourly_advocate_messaging

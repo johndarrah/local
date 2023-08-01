@@ -44,8 +44,6 @@ WITH
     SELECT DISTINCT
       interval_start_time                                                        AS hour_interval
       , TO_CHAR(DATE_TRUNC(HOURS, interval_start_time), 'YYYY-MM-DD HH24:MI:SS') AS ts
-      , LAG(ts, 24) OVER (ORDER BY ts)                                           AS _1_day
-      , LAG(ts, 168) OVER (ORDER BY ts)                                          AS _1_week
     FROM app_cash_cs.public.dim_date_time
     WHERE
       YEAR(report_date) >= 2022
