@@ -17,11 +17,13 @@ Notes:
 * Averages aren't included here since the data may be aggregated further downstream and it would lead to data inaccuracies
 * Incoming volume is excluded since that hasn't been assigned to an advocate
 ************************************************************************************************************/
-CREATE TABLE IF NOT EXISTS personal_johndarrah.public.fct_hourly_advocate_messaging (
-  ts                      TIMESTAMP_NTZ COMMENT 'Touch timestamp in UTC',
+CREATE TABLE IF NOT EXISTS app_cash_cs.public.fct_hourly_advocate_messaging (
+  ts                      TIMESTAMP_NTZ COMMENT 'Touch hourly timestamp in UTC',
   employee_id             VARCHAR COMMENT 'Advocate employee ID',
   advocate_name           VARCHAR COMMENT 'Advocate Name',
   advocate_city           VARCHAR COMMENT 'Advocate City',
+  manager                 VARCHAR COMMENT 'Advocate Manager',
+  managers_manager        VARCHAR COMMENT 'Managers Manager',
   queue_id                VARCHAR COMMENT 'Touch queue ID',
   team_name               VARCHAR COMMENT 'Touch team name',
   channel                 VARCHAR COMMENT 'Touch channel',
@@ -39,7 +41,7 @@ CREATE TABLE IF NOT EXISTS personal_johndarrah.public.fct_hourly_advocate_messag
 ;
 
 INSERT OVERWRITE INTO
-  personal_johndarrah.public.fct_hourly_advocate_messaging
+  app_cash_cs.public.fct_hourly_advocate_messaging
 WITH
   hour_ts AS (
     SELECT DISTINCT
@@ -47,8 +49,8 @@ WITH
       , TO_CHAR(DATE_TRUNC(HOURS, interval_start_time), 'YYYY-MM-DD HH24:MI:SS') AS ts
     FROM app_cash_cs.public.dim_date_time
     WHERE
-      YEAR(report_date) >= 2022
-      AND report_date <= CURRENT_DATE
+      YEAR(report_date) >= 2018
+      AND interval_start_time <= CURRENT_TIMESTAMP
       AND EXTRACT(MINUTE FROM interval_start_time) = 0
   )
   , handled_messaging_touches AS (
@@ -57,6 +59,8 @@ WITH
     , ecd.employee_id
     , ecd.full_name                                                       AS advocate_name
     , ecd.city                                                            AS advocate_city
+    , ecd.manager
+    , ecd.managers_manager
     , tqc.queue_id
     , tqc.team_name                                                       AS team_name
     , tqc.communication_channel                                           AS channel
@@ -65,7 +69,7 @@ WITH
     , SUM(mt.response_time_seconds) / 60                                  AS response_time_min
     , SUM(mt.handle_time_seconds) / 60                                    AS handle_time_min
     , SUM(DATEDIFF(MINUTES, mt.touch_assignment_time, mt.touch_end_time)) AS touch_lifetime_min
-    , touch_lifetime_min / handle_time_min                                AS concurrency
+    , touch_lifetime_min / NULLIFZERO(handle_time_min)                    AS concurrency
     , COUNT(DISTINCT
             CASE
               WHEN mt.touch_assignment_time::DATE != mt.touch_start_time::DATE
@@ -92,7 +96,7 @@ WITH
 
   WHERE
     NVL(LOWER(tqc.business_unit_name), 'other') IN ('customer success - specialty', 'customer success - core', 'other')
-  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 )
   , handled_rd_ast_touches AS (
   SELECT
@@ -100,6 +104,8 @@ WITH
     , ecd.employee_id
     , ecd.full_name                                                                   AS advocate_name
     , ecd.city                                                                        AS advocate_city
+    , ecd.manager
+    , ecd.managers_manager
     , IFF(e.chat_record_type = 'RD Chat', '00G5w000006vq2tEAA', '00G5w000006wBA1EAM') AS queue_id
     , IFF(e.chat_record_type = 'RD Chat', 'RD', 'AST')                                AS team_name
     , 'CHAT'                                                                          AS channel
@@ -108,7 +114,7 @@ WITH
     , NULL                                                                            AS handled_backlog_touches
     , SUM(e.chat_handle_time / 60)                                                    AS handle_time_min
     , SUM(e.chat_handle_time / 60)                                                    AS touch_lifetime_min
-    , touch_lifetime_min / handle_time_min                                            AS concurrency
+    , touch_lifetime_min / NULLIFZERO(handle_time_min)                                AS concurrency
     , NULL                                                                            AS response_time_min
     , COUNT(DISTINCT
             CASE
@@ -135,7 +141,7 @@ WITH
               ELSE NULL
             END)                                                                      AS abandoned_touches
     , handled_touches - abandoned_touches                                             AS qualified_sla_touches
-    , touches_in_sl / qualified_sla_touches * 100                                     AS sl_percent
+    , touches_in_sl / NULLIFZERO(qualified_sla_touches) * 100                         AS sl_percent
   FROM hour_ts ht
   LEFT JOIN app_cash_cs.public.live_agent_chat_escalations e
     ON ht.hour_interval = DATE_TRUNC(HOURS, CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', e.chat_start_time))
@@ -144,7 +150,7 @@ WITH
     AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', e.chat_start_time)::DATE BETWEEN ecd.start_date AND ecd.end_date
   WHERE
     chat_record_type IN ('RD Chat', 'Internal Advocate Success')
-  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 )
   -- messaging touches
 SELECT
@@ -152,6 +158,8 @@ SELECT
   , employee_id
   , advocate_name
   , advocate_city
+  , manager
+  , managers_manager
   , queue_id
   , team_name
   , channel
@@ -166,10 +174,6 @@ SELECT
   , qualified_sla_touches
   , sl_percent
 FROM handled_messaging_touches
-WHERE
-  1 = 1
-  AND ts::DATE = '2023-07-06'
-  AND employee_id = '44835'
 
 UNION
 
@@ -179,6 +183,8 @@ SELECT
   , employee_id
   , advocate_name
   , advocate_city
+  , manager
+  , managers_manager
   , queue_id
   , team_name
   , channel
@@ -193,10 +199,6 @@ SELECT
   , qualified_sla_touches
   , sl_percent
 FROM handled_rd_ast_touches
-WHERE
-  1 = 1
-  AND ts::DATE = '2023-07-06'
-  AND employee_id = '44835'
 ;
 
 SELECT *
@@ -204,4 +206,4 @@ FROM personal_johndarrah.public.fct_hourly_advocate_messaging
 ;
 
 -- DROP TABLE personal_johndarrah.public.fct_hourly_advocate_messaging
-DESCRIBE table personal_johndarrah.public.fct_hourly_advocate_messaging
+DESCRIBE TABLE personal_johndarrah.public.fct_hourly_advocate_messaging
