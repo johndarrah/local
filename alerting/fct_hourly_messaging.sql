@@ -1,7 +1,7 @@
 /************************************************************************************************************
 Owner: John Darrah (@johndarrah)
 Back Up: Mayuri Magdum (@mayurium)
-Business Purpose: Denormalized fact table that aggregates messaging touch data at the queue level
+Business Purpose: Incremental denormalized fact table that aggregates messaging touch data at the queue level
 Date Range: 2018-01-01 onward
 Time Zone: UTC
 Composite key: ts + queue_id
@@ -15,10 +15,15 @@ Change Log:
 
 Notes:
 * Averages aren't included here since the data may be aggregated further downstream and it would lead to data inaccuracies
-
+Steps:
+Step 1: Create staging table metadata: app_cash_cs.public.fct_hourly_messaging_staging
+Step 2: Delete previous 7 days of data from staging
+Step 3: Incrementally load previous 7 days of data into staging
+Step 4: Create production table by cloning staging table: app_cash_cs.public.fct_hourly_messaging
 ************************************************************************************************************/
 
-CREATE TABLE IF NOT EXISTS app_cash_cs.public.fct_hourly_messaging (
+-- Step 1
+CREATE TABLE IF NOT EXISTS app_cash_cs.public.fct_hourly_messaging_staging (
   ts                      TIMESTAMP_NTZ COMMENT 'Touch hourly timestamp in UTC',
   queue_id                VARCHAR COMMENT 'Touch queue ID',
   team_name               VARCHAR COMMENT 'Touch team name',
@@ -30,14 +35,26 @@ CREATE TABLE IF NOT EXISTS app_cash_cs.public.fct_hourly_messaging (
   handle_time_min         NUMBER COMMENT 'Touch handle_time in minutes',
   touch_lifetime_min      NUMBER COMMENT 'Touch touch_lifetime in minutes',
   handled_backlog_touches NUMBER COMMENT 'Touch handled_backlog_touches',
-  touches_in_sl           NUMBER COMMENT 'Touches in Service Level',
-  qualified_sla_touches   NUMBER COMMENT 'Qualified SLA touches (in business hours,etc)',
-  sl_percent              NUMBER COMMENT 'Touch Service Level Percent '
+  touches_in_sla          NUMBER COMMENT 'Touches in Service Level',
+  qualified_sla_touches   NUMBER COMMENT 'Qualified SLA touches (in business hours,etc)'
 )
 ;
 
-INSERT OVERWRITE INTO
-  app_cash_cs.public.fct_hourly_messaging
+-- Step 2
+DELETE
+FROM app_cash_cs.public.fct_hourly_messaging_staging
+WHERE
+  1 = 1
+  {% if ds == '2023-08-08' %}
+  AND ts::DATE <= CURRENT_DATE
+  {% else %}
+  AND ts::DATE >= DATEADD(DAY, -7, '{{ ds }}'::DATE)
+  {% endif %}
+;
+
+-- Step 3
+INSERT INTO
+  app_cash_cs.public.fct_hourly_messaging_staging
 WITH
   hour_ts AS (
     SELECT DISTINCT
@@ -86,9 +103,8 @@ WITH
                 AND mt.in_business_hours
                 THEN mt.touch_id
               ELSE NULL
-            END)                                                          AS touches_in_sl
+            END)                                                          AS touches_in_sla
     , COUNT(DISTINCT IFF(mt.in_business_hours, mt.touch_id, NULL))        AS qualified_sla_touches
-    , touches_in_sl / NULLIFZERO(qualified_sla_touches) * 100             AS sl_percent
   FROM hour_ts ht
   LEFT JOIN app_cash_cs.preprod.messaging_touches mt
     ON ht.hour_interval = DATE_TRUNC('hour', CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', mt.touch_assignment_time))
@@ -133,7 +149,7 @@ WITH
                 AND e.chat_handle_time > 0
                 THEN e.chat_transcript_id
               ELSE NULL
-            END)                                                                      AS touches_in_sl
+            END)                                                                      AS touches_in_sla
     , COUNT(DISTINCT
             CASE
               WHEN e.chat_record_type = 'RD Chat'
@@ -147,7 +163,6 @@ WITH
               ELSE NULL
             END)                                                                      AS abandoned_touches
     , handled_touches - abandoned_touches                                             AS qualified_sla_touches
-    , touches_in_sl / NULLIFZERO(qualified_sla_touches) * 100                         AS sl_percent
   FROM hour_ts ht
   LEFT JOIN app_cash_cs.public.live_agent_chat_escalations e
     ON ht.hour_interval = DATE_TRUNC(HOURS, CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', e.chat_start_time))
@@ -155,54 +170,71 @@ WITH
     chat_record_type IN ('RD Chat', 'Internal Advocate Success')
   GROUP BY 1, 2
 )
+  , messaging_touches AS (
+  SELECT
+    e.ts
+    , e.queue_id
+    , e.team_name
+    , e.channel
+    , e.business_unit_name
+    , e.entering_touches
+    , h.handled_touches
+    , h.response_time_min
+    , h.handle_time_min
+    , h.touch_lifetime_min
+    , h.handled_backlog_touches
+    , h.touches_in_sla
+    , h.qualified_sla_touches
+  FROM entering_message_touches e
+  LEFT JOIN handled_messaging_touches h
+    ON e.ts = h.ts
+    AND e.queue_id = h.queue_id
+  UNION ALL
 
-  -- messaging touches
+  --   AST and RD touches
+  SELECT
+    e.ts
+    , e.queue_id
+    , e.team_name
+    , e.channel
+    , e.business_unit_name
+    , e.entering_touches
+    , h.handled_touches
+    , h.response_time_min
+    , h.handle_time_min
+    , h.touch_lifetime_min
+    , h.handled_backlog_touches
+    , h.touches_in_sla
+    , h.qualified_sla_touches
+  FROM entering_rd_ast_touches e
+  LEFT JOIN handled_rd_ast_touches h
+    ON e.ts = h.ts
+    AND e.queue_id = h.queue_id
+)
+
 SELECT
-  e.ts
-  , e.queue_id
-  , e.team_name
-  , e.channel
-  , e.business_unit_name
-  , e.entering_touches
-  , h.handled_touches
-  , h.response_time_min
-  , h.handle_time_min
-  , h.touch_lifetime_min
-  , h.handled_backlog_touches
-  , h.touches_in_sl
-  , h.qualified_sla_touches
-  , h.sl_percent
-FROM entering_message_touches e
-LEFT JOIN handled_messaging_touches h
-  ON e.ts = h.ts
-  AND e.queue_id = h.queue_id
-
-UNION
-
---   AST and RD touches
-SELECT
-  e.ts
-  , e.queue_id
-  , e.team_name
-  , e.channel
-  , e.business_unit_name
-  , e.entering_touches
-  , h.handled_touches
-  , h.response_time_min
-  , h.handle_time_min
-  , h.touch_lifetime_min
-  , h.handled_backlog_touches
-  , h.touches_in_sl
-  , h.qualified_sla_touches
-  , h.sl_percent
-FROM entering_rd_ast_touches e
-LEFT JOIN handled_rd_ast_touches h
-  ON e.ts = h.ts
-  AND e.queue_id = h.queue_id
+  ts
+  , queue_id
+  , team_name
+  , channel
+  , business_unit_name
+  , entering_touches
+  , handled_touches
+  , response_time_min
+  , handle_time_min
+  , touch_lifetime_min
+  , handled_backlog_touches
+  , touches_in_sla
+  , qualified_sla_touches
+FROM messaging_touches
+WHERE
+  1 = 1
+  {% if ds == '2023-08-08' %}
+  AND ts::DATE <= CURRENT_DATE
+  {% else %}
+  AND ts::DATE >= DATEADD(DAY, -7, '{{ ds }}'::DATE)
+  {% endif %}
 ;
 
-SELECT *
-FROM personal_johndarrah.public.fct_hourly_messaging
-;
-
-DESCRIBE TABLE personal_johndarrah.public.fct_hourly_messaging
+-- Step 4
+CREATE OR REPLACE TABLE app_cash_cs.public.fct_hourly_messaging CLONE app_cash_cs.public.fct_hourly_messaging_staging
