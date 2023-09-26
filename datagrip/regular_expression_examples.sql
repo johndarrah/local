@@ -18,7 +18,7 @@ SELECT
   , email_3 REGEXP '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,4}$' AS email_3_correct
 ;
 
--- Identifying strings that begin or  end with characters:
+-- Identifying strings that begin or end with characters:
 SELECT
   'chat this is a test'                AS channel_1
   , 'this is the phone channel: voice' AS channel_2
