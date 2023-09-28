@@ -4,7 +4,6 @@ SELECT DISTINCT
   , query_text
   , MAX(end_date) AS query_last_run_ds
 FROM app_datamart_cco.data_pipelines.snowflake_query_history
-  -- from snowflake_usage.account_usage.query_history
 WHERE
   1 = 1
   --   date filters
@@ -17,5 +16,7 @@ WHERE
   AND query_text ILIKE '%app_cash_cs.public.support_cases%'
   --   column filter
   AND query_text ILIKE '%notes%'
+  -- looker only
+  AND query_text ILIKE '%looker query context%'
 GROUP BY 1, 2, 3
 ORDER BY 1 DESC
