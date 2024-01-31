@@ -1,0 +1,961 @@
+######################################
+# Owner: johndarrah, helenali
+
+# Nomenclature Rules
+# group labels are prefixed with "_" so they apprear at the top of views
+# all PoP related fields are suffixed with "PoP"
+# parameter = Filter = group_label: "_Filters"
+# granularity = parameter = group_label: "_Parameters"
+
+######################################
+
+view: cash_support_cases {
+  sql_table_name:
+  {% if _user_attributes['is_cash_bpo'] == '0' %} APP_CASH_CS.PUBLIC.SUPPORT_CASES {% else %} bpo_app_cash_cs.public.support_cases {% endif %};;
+
+  # Sets
+  set: case_details{
+    fields: [case_id, case_number, case_creation_date, origin, channel, first_assigned_queue, last_assigned_queue, last_queue_type, jira_url, problem_tag, problem_type, last_owner_name, status, last_modified_by_employee_id ]
+  }
+
+  set: origin{
+    fields: [origin, count]
+  }
+
+  set: problem_type{
+    fields: [problem_type, count]
+  }
+
+  parameter: date_granularity {
+    group_label: "_Filters"
+    type: unquoted
+    # allowed_value: {
+    #   value: "30Min"
+    # }
+    allowed_value: {
+      value: "Day"
+    }
+    allowed_value: {
+      value: "Week"
+    }
+    allowed_value: {
+      value: "Month"
+    }
+    allowed_value: {
+      value: "Quarter"
+    }
+    allowed_value: {
+      value: "Year"
+    }
+  }
+
+  ######################################
+  # Period-over-Period (PoP) Comparisons
+  # Supporting documentation: https://www.googlecloudcommunity.com/gc/Technical-Tips-Tricks/Methods-for-Period-Over-Period-PoP-Analysis-in-Looker-Method-3/ta-p/587554
+
+  filter: pop_date_pt {
+    ##using date filter to gain access to date_start and date_end liquid variables
+    group_label: "_Filters PoP"
+    label: "Current Date Range"
+    type: date
+  }
+
+  dimension: pop_date_filter_start {
+    description: "The starting date for the PoP filter. If no start date then go back to the start of Unix time."
+    group_label: "_Parameters PoP"
+    type: date
+    sql:
+          case
+            when {% date_start pop_date_pt %} is null then to_date('1970-01-01')
+            else CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', TO_TIMESTAMP(CONCAT({% date_start pop_date_pt %}::DATE,' ',TO_CHAR(CURRENT_TIMESTAMP, 'HH24:MI:SS'))))::DATE
+          end
+          ;;
+    # hidden: yes
+    }
+    
+    dimension: date_start_test {
+      description: "The starting date for the PoP filter. If no start date then go back to the start of Unix time."
+      group_label: "_test"
+      type: date
+      sql: {% date_start pop_date_pt %}          ;;
+    }
+    
+    dimension: pop_date_filter_end {
+      description: "The ending date for the PoP filter. If no date then go as far as current date."
+      group_label: "_Parameters PoP"
+      type: date
+      sql:
+          case
+            when {% date_end pop_date_pt %} is null then current_date()
+            else CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', TO_TIMESTAMP(CONCAT({% date_end pop_date_pt %}::DATE,' ',TO_CHAR(CURRENT_TIMESTAMP, 'HH24:MI:SS'))))::DATE
+          end
+          ;;
+      # hidden: yes
+    }
+    
+  dimension: days_in_period__created_date {
+    # hidden:  yes
+    group_label: "_Parameters PoP"
+    description: "Gives the number of days in the current period date range"
+    type: number
+    sql: DATEDIFF(DAY, ${pop_date_filter_start}, ${pop_date_filter_end}) ;;
+  }
+  
+  dimension: day_in_period__created_date {
+    group_label: "_Parameters PoP"
+    label: "Current Period Day Number"
+    # hidden: yes
+    description: "Gives the number of days since the start of each period. Use this to align the event dates onto the same axis, the axes will read 1,2,3, etc."
+    type: number
+    sql:
+        {% if pop_date_pt._is_filtered %}
+            CASE
+            WHEN ${case_creation_date} between ${pop_date_filter_start} and ${pop_date_filter_end}
+            THEN DATEDIFF(DAY, ${pop_date_filter_start}, ${case_creation_date}) + 1
+            WHEN ${case_creation_date} between ${previous_start} and ${pop_date_filter_start}
+            THEN DATEDIFF(DAY, ${previous_start}, ${case_creation_date}) + 1
+            END
+        {% else %} NULL
+        {% endif %}
+        ;;
+  }
+
+  dimension: period_2_start {
+    # hidden:  yes
+    group_label: "_Parameters PoP"
+    description: "Calculates the start of the previous period"
+    type: date
+    sql: DATEADD(DAY, -${days_in_period__created_date}, ${pop_date_filter_start});;
+  }
+  
+  dimension: period_2_end {
+    # hidden:  yes
+    group_label: "_Parameters PoP"
+    description: "Calculates the end of the previous period"
+    type: date
+    sql: DATEADD(DAY, -1, ${pop_date_filter_start});;
+  }
+
+  dimension_group: created_date_in_period {
+    group_label: "_Parameters PoP"
+    description: "Use this as your grouping dimension when comparing periods. Aligns the previous periods onto the current period"
+    label: "Current Period"
+    type: time
+    sql: DATEADD(DAY, ${day_in_period__created_date} - 1, ${pop_date_filter_start}) ;;
+    timeframes: [
+      date,
+      week,
+      quarter,
+      month,
+      year]
+    hidden: yes
+  }
+
+  dimension: created_date_in_period_parameter {
+    group_label: "_Parameters PoP"
+    label: "Current Period Date Parameter"
+    label_from_parameter: date_granularity
+    sql:
+      {% if date_granularity._parameter_value == 'Day' %}
+      ${created_date_in_period_date}
+      {% elsif date_granularity._parameter_value == 'Week' %}
+      ${created_date_in_period_week}
+      {% elsif date_granularity._parameter_value == 'Month' %}
+      ${created_date_in_period_month}
+      {% elsif date_granularity._parameter_value == 'Quarter' %}
+      ${created_date_in_period_quarter}
+      {% elsif date_granularity._parameter_value == 'Year' %}
+      ${created_date_in_period_year}
+      {% else %}
+      ${created_date_in_period_date}
+      {% endif %};;
+  }
+
+  dimension: interval {
+    description: "Seconds between start date and end date."
+    group_label: "_Parameters PoP"
+    type: number
+    sql: datediff(seconds, ${pop_date_filter_start}, ${pop_date_filter_end}) ;;
+    hidden: yes
+  }
+
+  dimension: previous_start {
+    description: "Start date of the period chosen minus the number of seconds in the interval."
+    group_label: "_Parameters PoP"
+    type: date_raw
+    sql: dateadd(seconds, -${interval}, ${pop_date_filter_start})::DATE ;;
+    hidden: yes
+  }
+
+  dimension: pop_timeframes {
+    description: "Period is the period filtered. Previous period is the period prior. Not in Range is any date outside of the period and previous period."
+    group_label: "_Parameters PoP"
+    label: "Period Timeframe"
+    type: string
+    suggestions: ["Current Period", "Previous Period", "Not In Range"]
+    case: {
+      when: {
+        sql: ${case_creation_raw} >= ${pop_date_filter_start} AND ${case_creation_raw} < ${pop_date_filter_end} ;;
+        label: "Current Period"
+      }
+      when: {
+        sql: ${case_creation_raw} >= ${previous_start} AND ${case_creation_raw} < ${pop_date_filter_start} ;;
+        label: "Previous Period"
+      }
+      else: "Not In Range"
+    }
+  }
+
+  dimension: pop_timeframe_dates {
+    description: "Period is the period filtered. Previous period is the period prior. Not in Range is any date outside of the period and previous period."
+    group_label: "_Parameters PoP"
+    label: "Period Timeframe Dates"
+    type: string
+    sql: case
+      when ${pop_timeframes}='Current Period'
+      then ${current_period_timeframe_dates}
+      when ${pop_timeframes}='Previous Period'
+      then ${previous_period_timeframe_dates}
+      else null
+      end;;
+    }
+
+  dimension: current_period_timeframe_dates {
+    group_label: "_Parameters PoP"
+    type: string
+    sql: concat(${pop_date_filter_start},' to ',dateadd(day,-1,${pop_date_filter_end})::DATE)  ;;
+  }
+  dimension: previous_period_timeframe_dates {
+    group_label: "_Parameters PoP"
+    type: string
+    sql: concat(${previous_start}::DATE,' to ',dateadd(day,-1,${pop_date_filter_start})::DATE)  ;;
+  }
+
+  # end of period over period comparison block
+  ######################################
+
+  ######################################
+  # Parameters
+
+  parameter: version_comparison_picker {
+    type: unquoted
+    allowed_value: {
+      value: "Less Than"
+    }
+    allowed_value: {
+      value: "Less Than or Equal"
+    }
+    allowed_value: {
+      value: "Equal"
+    }
+    allowed_value: {
+      value: "Greater Than"
+    }
+    allowed_value: {
+      label: "Greater Than or Equal"
+      value: ">="
+    }
+  }
+
+  parameter: version_comparison_number {
+    type: string
+  }
+
+  dimension: created_date_parameter {
+    group_label: "_Parameters"
+    label_from_parameter: date_granularity
+    sql:
+      {% if date_granularity._parameter_value == 'Day' %}
+      ${case_creation_date}
+      {% elsif date_granularity._parameter_value == 'Week' %}
+      ${case_creation_week}
+      {% elsif date_granularity._parameter_value == 'Month' %}
+      ${case_creation_month}
+      {% elsif date_granularity._parameter_value == 'Quarter' %}
+      ${case_creation_quarter}
+      {% elsif date_granularity._parameter_value == 'Year' %}
+      ${case_creation_year}
+      {% else %}
+      ${case_creation_date}
+      {% endif %};;
+  }
+
+  dimension: last_resolved_parameter {
+    group_label: "_Parameters"
+    label_from_parameter: date_granularity
+    sql:
+      {% if date_granularity._parameter_value == 'Day' %}
+      ${last_resolved_date}
+      {% elsif date_granularity._parameter_value == 'Week' %}
+      ${last_resolved_week}
+      {% elsif date_granularity._parameter_value == 'Month' %}
+      ${last_resolved_month}
+      {% elsif date_granularity._parameter_value == 'Quarter' %}
+      ${last_resolved_quarter}
+      {% elsif date_granularity._parameter_value == 'Year' %}
+      ${last_resolved_year}
+      {% else %}
+      ${last_resolved_date}
+      {% endif %};;
+  }
+
+# End of Parameters
+######################################
+
+######################################
+# Dimensions
+
+  dimension: case_id{
+      hidden: no
+      primary_key: yes
+      sql: ${TABLE}.case_id ;;
+  }
+
+  dimension: source{
+    sql: ${TABLE}.source;;
+  }
+
+  dimension: channel {
+    sql: ${TABLE}.channel;;
+    }
+
+    dimension: transaction_token {
+      sql: ${TABLE}.BANKING_TRANSACTION_TOKEN ;;
+      #may be null
+    }
+
+
+  dimension: case_number{
+    sql: ${TABLE}.case_number ;;
+    link: {
+      label: "Salesforce"
+      url: "https://cf1.lightning.force.com/lightning/r/Case/{{case_id}}/view"
+    }
+  }
+
+  dimension: new_survey_type {
+    description: "Temporary dimension for testing"
+    type: yesno
+    sql: ${app_version} >= '3.54.0' ;;
+  }
+
+  dimension: flow_token {
+    description: "Same as Conversation Token"
+    type: string
+    sql: ${TABLE}.flow_token ;;
+  }
+
+  dimension: version_comparison {
+    type: yesno
+    sql: ${app_version} {% parameter version_comparison_picker %} {% parameter version_comparison_number%}   ;;
+  }
+
+  dimension: case_creation_at_raw{
+    type: date_time
+    sql: ${TABLE}.case_creation_date_time;;
+  }
+
+  dimension_group: case_creation {
+    type: time
+    timeframes:
+    [
+      hour_of_day,
+      hour,
+      minute15,
+      minute30,
+      date,
+      day_of_year,
+      day_of_week,
+      day_of_week_index,
+      week,
+      week_of_year,
+      month,
+      quarter,
+      year,
+      raw
+      ]
+    sql: ${TABLE}.case_creation_date_time;;
+    convert_tz: yes
+  }
+
+  measure: max_case_creation_date_time{
+    group_label: "Case Creation Date (Max/Min Measures)"
+    type: date_time
+    sql: max(${TABLE}.case_creation_date_time);;
+  }
+  measure: min_case_creation_date_time{
+    group_label: "Case Creation Date (Max/Min Measures)"
+    type: date_time
+    sql: min(${TABLE}.case_creation_date_time);;
+  }
+
+  dimension: case_last_resolved_time_raw{
+    sql: ${TABLE}.last_resolved_date_time ;;
+  }
+
+  dimension_group: case_updated {
+    type: time
+    timeframes:
+    [
+      hour_of_day,
+      minute15,
+      date,
+      day_of_year,
+      day_of_week,
+      day_of_week_index,
+      week,
+      week_of_year,
+      month,
+      quarter,
+      year,
+      time,
+      raw
+    ]
+    sql: ${TABLE}.updated_date_time;;
+  }
+  measure: max_update_date_time{
+    group_label: "Case Update Date (Measures/Parameters)"
+    type: date_time
+    sql: max(${TABLE}.updated_date_time);;
+  }
+  measure: min_update_date_time{
+    group_label: "Case Update Date (Measures/Parameters)"
+    type: date_time
+    sql: min(${TABLE}.updated_date_time);;
+  }
+  measure: average_case_lifetime {
+    group_label: "case_lifetime_measures"
+    label: "Average Case Lifetime Hours (Conditional Formatting)"
+    type: number
+    sql: round(${average_case_lifetime_hours},1);;
+    value_format: "#.#"
+    description: "Average Case Lifetime Conditinoal Formatting is based on +/-25% intervals from 24 Hours of Lifetime"
+    # goal is based off of a case lifetime being greater than a day, only use with queues
+    html:
+      {% assign goal_1 = 24 | times: 0.25 %}
+      {% assign goal_2 = 24 | times: 0.5 %}
+      {% assign goal_3 = 24 | times: 0.75 %}
+      {% assign goal_4 = 24 %}
+      {% assign goal_5 = 24 | times: 1.25 %}
+      {% assign goal_6 = 24 | times: 1.5 %}
+          {% if value <= goal_1 %}
+            <p style="color: black; background-color: #6aa84f; font-size: 100%; text-align: center">{{ value }}</p>
+          {% elsif value <= goal_2 %}
+            <p style="color: black; background-color: #93c47d; font-size: 100%; text-align: center">{{ value }}</p>
+          {% elsif value <= goal_3 %}
+            <p style="color: black; background-color: #d9ead3; font-size: 100%; text-align: center">{{ value }}</p>
+          {% elsif value <= goal_4 %}
+            <p style="color: black; background-color: #ff9900; font-size: 100%; text-align: center">{{ value }}</p>
+          {% elsif value <= goal_5 %}
+            <p style="color: black; background-color: #ea9999; font-size: 100%; text-align: center">{{ value }}</p>
+          {% elsif value <= goal_6 %}
+            <p style="color: black; background-color: #e06666; font-size: 100%; text-align: center">{{ value }}</p>
+          {% else %}
+            <p style="color: black; background-color: #ff0000; font-size: 100%; text-align: center">{{ value }}</p>
+          {% endif %}
+        ;;
+  }
+
+  dimension: case_lifetime_days {
+    type: number
+    value_format_name: decimal_0
+    sql: ROUND(${TABLE}.case_lifetime_seconds/3600/24);;
+  }
+
+  dimension: case_lifetime_minutes {
+    type: number
+    value_format_name: decimal_1
+    sql: ROUND(${TABLE}.case_lifetime_seconds/60);;
+  }
+
+  dimension: case_lifetime_buckets {
+    description: "Buckets for cases with lifetime values"
+    sql:
+       CASE
+       WHEN ${TABLE}."case_lifetime_seconds" between 0 and 172799 then '00-02 days'
+       WHEN ${TABLE}."case_lifetime_seconds" between 172800 and 345599 then '02-04 days'
+       WHEN ${TABLE}."case_lifetime_seconds" between 345600 and 604799 then '04-07 days'
+       WHEN ${TABLE}."case_lifetime_seconds" between 604800 and 1209599 then '07-14 days'
+       WHEN ${TABLE}."case_lifetime_seconds" between 1209600 and 2591999 then '14-30 days'
+       WHEN ${TABLE}."case_lifetime_seconds" >=2592000 then '30+ days'
+       ELSE NULL
+       END ;;
+  }
+
+  measure: average_case_lifetime_hours {
+    group_label: "case_lifetime_measures"
+    type: number
+    value_format_name: decimal_1
+    sql: sum(${TABLE}.case_lifetime_seconds/3600) / nullif(count(${case_id}),0);;
+  }
+
+  measure: average_case_lifetime_days {
+    group_label: "case_lifetime_measures"
+    type: number
+    value_format_name: decimal_1
+    sql: sum(${case_lifetime_days})/nullif(count(${case_id}),0) ;;
+  }
+
+  measure: case_lifetime_hours {
+    group_label: "case_lifetime_measures"
+    type: number
+    value_format_name: decimal_1
+    sql: sum(${TABLE}.case_lifetime_seconds/3600) ;;
+  }
+
+  measure: case_lifetime_hours_minimum {
+    group_label: "case_lifetime_measures"
+    type: min
+    value_format_name: decimal_1
+
+    sql: ${TABLE}.case_lifetime_seconds/3600 ;;
+    value_format: "#.#"
+    }
+
+  measure: case_lifetime_hours_25_percentile {
+    group_label: "case_lifetime_measures"
+    type: percentile
+    percentile: 25
+    value_format_name: decimal_1
+    sql: ${TABLE}.case_lifetime_seconds/3600 ;;
+  }
+
+  measure: case_lifetime_hours_50_percentile {
+    group_label: "case_lifetime_measures"
+    type: percentile
+    percentile: 50
+    value_format_name: decimal_1
+    sql: ${TABLE}.case_lifetime_seconds/3600 ;;
+  }
+
+  measure: case_lifetime_hours_75_percentile {
+    group_label: "case_lifetime_measures"
+    type: percentile
+    percentile: 75
+    value_format_name: decimal_1
+    sql: ${TABLE}.case_lifetime_seconds/3600 ;;
+  }
+
+  measure: case_lifetime_hours_95_percentile {
+    group_label: "case_lifetime_measures"
+    type: percentile
+    percentile: 95
+    value_format_name: decimal_1
+    sql: ${TABLE}.case_lifetime_seconds/3600 ;;
+  }
+
+  measure: case_lifetime_hours_maximum {
+    group_label: "case_lifetime_measures"
+    type: max
+    value_format_name: decimal_1
+    sql: ${TABLE}.case_lifetime_seconds/3600 ;;
+  }
+
+  dimension_group: last_resolved {
+    type: time
+    timeframes:  [date, week, month, quarter, year]
+    sql: ${TABLE}.last_resolved_date ;;
+  }
+  measure: max_last_resolved_date_time{
+    group_label: "Case Last Resolved Date (Measures/Parameters)"
+    type: date_time
+    sql: max(${TABLE}.last_resolved_date);;
+  }
+  measure: min_last_resolved_date_time{
+    group_label: "Case Last Resolved Date (Measures/Parameters)"
+    type: date_time
+    sql: min(${TABLE}.last_resolved_date);;
+  }
+
+  dimension: last_owner_id{
+    hidden: yes
+    sql: ${TABLE}.last_owner_id ;;
+  }
+  dimension: last_owner_name{
+    sql: ${TABLE}.last_owner_name ;;
+  }
+  dimension: first_assigned_queue{
+    sql: ${TABLE}.first_assigned_queue;;
+  }
+  dimension: last_assigned_queue{
+    sql: ${TABLE}.last_assigned_queue;;
+  }
+  dimension: last_queue_type{
+    sql: ${TABLE}.last_queue_type;;
+  }
+
+  dimension: last_modified_by_name {
+    sql: ${TABLE}.last_modified_by_name;;
+  }
+
+  dimension: last_modified_by_id {
+    sql: ${TABLE}.last_modified_by_id;;
+  }
+
+  dimension: last_modified_by_employee_id {
+    sql: ${TABLE}.last_modified_by_employee_id;;
+  }
+
+  dimension: last_owner_employee_id{
+    sql: ${TABLE}.last_owner_employee_id ;;
+  }
+
+  dimension: notes {
+    sql: ${TABLE}.notes;;
+  }
+
+  dimension: origin{ #replaces channel in cf1
+    type:string
+    sql: ${TABLE}.origin;;
+  }
+
+  dimension: origin_custom_sort { #this is how you make a custom sort order, add more cases if you need more channels
+    label: "Origin (Custom Sort)"
+    case: {
+      when: {
+        sql: ${origin} = 'Email' ;;
+        label: "Email"
+      }
+      when: {
+        sql: ${origin} = 'Chat' ;;
+        label: "Chat"
+      }
+      when: {
+        sql: ${origin} = 'Phone' ;;
+        label: "Phone"
+      }
+      when: {
+        sql: ${origin} in ('Facebook', 'Twitter', 'Reddit', 'Instagram', 'TIKTOK');;
+        label: "Social"
+      }
+
+      when: {
+        sql: ${origin} = 'DISPUTRON' ;;
+        label: "Disputron"
+      }
+
+    }
+  }
+
+  dimension: salesforce_case_type{
+    sql: ${TABLE}.salesforce_case_type;;
+  }
+  dimension: status{
+    sql: ${TABLE}.status;;
+  }
+  dimension: language{
+    sql: ${TABLE}.language;;
+  }
+  dimension: country_code{
+    sql: ${TABLE}.country_code;;
+  }
+  dimension: region {
+    sql: ${TABLE}.region;;
+  }
+  dimension: entity_amount{
+    type: number
+    sql: ${TABLE}.entity_amount;;
+  }
+
+  dimension: ADVOCATE_CAPTURED_DISPUTE_TXN_VALUE{
+    sql: ${TABLE}.ADVOCATE_CAPTURED_DISPUTE_TXN_VALUE;;
+  }
+
+  dimension: csat_sent_at{
+    type: date_time
+    sql: ${TABLE}.csat_sent_at;;
+  }
+    dimension: parent_id{
+    sql: ${TABLE}.parent_id;;
+  }
+  dimension: selected_category{
+    sql: ${TABLE}.selected_category;;
+  }
+  dimension: is_bulk_resolved{
+    sql: ${TABLE}.is_bulk_resolved;;
+  }
+  dimension: auto_response_category{
+    sql: ${TABLE}.auto_response_category;;
+  }
+  dimension: auto_response_group{
+    sql: CASE
+    WHEN ${TABLE}.auto_response_category is not null THEN 1
+    ELSE 0
+    END;;
+  }
+  dimension: customer_token{
+    sql: ${TABLE}.customer_token;;
+  }
+  dimension: jira_url{
+    sql: ${TABLE}.jira_url;;
+  }
+  dimension: app_version{
+    sql: ${TABLE}.app_version;;
+  }
+  dimension: customer_id{
+    sql: ${TABLE}.customer_id;;
+  }
+  dimension: payment_id{
+    sql: ${TABLE}.payment_id;;
+  }
+  dimension: transfer_id{
+    sql: ${TABLE}.transfer_id;;
+  }
+  dimension: platform{
+    sql: ${TABLE}.platform;;
+  }
+  dimension: priority_level{
+    sql: ${TABLE}.priority_level;;
+  }
+  dimension: transfer_count {
+    type: number
+    sql:  ${TABLE}.transfer_count;;
+  }
+  measure: total_transfers {
+    type: sum
+    sql: ${TABLE}.transfer_count ;;
+  }
+  dimension: outgoing_emails {
+    type: number
+    sql:  ${TABLE}.outgoing_emails;;
+  }
+
+  dimension: outgoing_human_emails {
+    type: number
+    sql:  ${TABLE}.outgoing_human_emails;;
+  }
+
+  measure: total_outgoing_emails {
+    type: sum
+    sql: ${TABLE}.outgoing_emails ;;
+  }
+  dimension: incoming_emails {
+    type: number
+    sql:  ${TABLE}.incoming_emails;;
+  }
+  measure: total_incoming_emails {
+    type: sum
+    sql: ${TABLE}.incoming_emails ;;
+  }
+  dimension: email_first_response_minutes {
+    type: number
+    sql:  ${TABLE}.email_first_response_mins;;
+  }
+  measure: email_response_time_minutes {
+    type: sum
+    sql: ${TABLE}.email_first_response_mins ;;
+  }
+  measure: email_response_time_hours {
+    type: number
+    value_format_name: decimal_1
+    sql: ${email_response_time_minutes}/60 ;;
+  }
+  dimension: auto_responder_only_case {
+    type: yesno
+    sql:  ${TABLE}.auto_responder_only_case;;
+  }
+  dimension: problem_tag {
+    sql:  ${TABLE}.problem_tag;;
+  }
+
+  dimension: problem_type {
+    sql:  ${TABLE}.problem_type;;
+  }
+  dimension: problem_details {
+    sql:  ${TABLE}.problem_details;;
+  }
+  dimension: handled_by {
+    sql: CASE
+    WHEN ${TABLE}.channel is null THEN ${TABLE}.origin
+    ELSE ${TABLE}.channel
+    END;;
+  }
+  dimension: auto_responder_or_manual{
+    sql: CASE
+          WHEN ${auto_responder_only_case} = 'TRUE' THEN 'ar_only'
+          WHEN ${auto_response_category} is not null AND ${touch_count} is not null THEN 'both'
+          ELSE 'manual_only'
+          END;;
+  }
+
+  # Measures
+
+  measure: count {
+    type: count
+  }
+
+  measure: case_count{
+    type: count_distinct
+    sql: ${TABLE}.case_id ;;
+    drill_fields: [case_number,case_id]
+
+    link: {
+      label: "Drill by Case Details"
+      url: " {{ drill_fields_case_details._link }} "
+    }
+
+    link: {
+      label: "Drill by Origin"
+      url: "{{ drill_fields_origin._link }}"
+    }
+
+    link: {
+      label: "Drill by Problem Type"
+      url: "{{ drill_fields_problem_type._link }}"
+    }
+
+    link: {
+      label: "Drill by Problem Tag"
+      url: "{{ drill_fields_problem_tag._link }}"
+    }
+  }
+
+
+
+  measure: customer_count{
+    type: count_distinct
+    sql: ${TABLE}.customer_token ;;
+    drill_fields: [customer_token,case_creation_date,case_id,case_number]
+  }
+
+
+  measure: disputron_transaction_count{
+    #disputron originated cases will list the transaction token, other cases may not
+    type: count_distinct
+    sql:${TABLE}.BANKING_TRANSACTION_TOKEN;;
+    drill_fields: [customer_token,case_creation_date,case_id,case_number, transaction_token]
+  }
+
+  measure: average_hours_to_first_email_response{
+    type: average
+    value_format_name:decimal_1
+    sql: ${TABLE}.email_first_response_mins/60;;
+  }
+  dimension: raw_first_response_in_24_hrs {
+    sql: ${TABLE}.answered_in_sl;;
+  }
+
+  dimension: closed_date_time {
+    sql: ${TABLE}.closed_date_time ;;
+  }
+  measure: count_cases_first_response_in_24_hrs{
+    type:  sum
+    sql: ${TABLE}.answered_in_sl;;
+  }
+
+  measure: percent_first_response_in_24_hrs{
+    type: average
+    value_format_name: percent_1
+    sql: ${TABLE}.answered_in_sl ;;
+  }
+  measure: all_autoresponded_cases{
+    type: sum
+    sql: ${auto_response_group} ;;
+  }
+  measure: percent_cases_with_autoresponse{
+    type: number
+    value_format_name: percent_1
+    sql: ${all_autoresponded_cases}/${case_count} ;;
+  }
+  dimension: touch_count {
+    type: number
+    sql:  ${TABLE}.touch_count ;;
+  }
+
+  dimension: P2P_dispute_reason{
+  type: string
+  sql: ${TABLE}.p2p_dispute_reason;;
+  }
+
+  dimension: disputron_description {
+    type: string
+    sql: ${TABLE}.disputron_description ;;
+  }
+
+  dimension: P2P_dispute_status{
+    type: string
+    sql: ${TABLE}.p2p_dispute_status;;
+  }
+  measure: sum_touches {
+    type: sum
+    sql:  ${TABLE}.touch_count ;;
+  }
+
+  measure: touches_per_case {
+    type: number
+    value_format_name: decimal_2
+    sql: sum(${touch_count})/count(${case_id}) ;;
+  }
+
+  dimension: contact_ID{
+    sql: ${TABLE}.AMAZON_CONNECT_CONTACT_ID  ;;
+  }
+
+  #owner: Kwaby Akoto
+  #this is for calculating total cases by percent in each of bucket
+  measure: percent_total_cases{
+    type: percent_of_total
+    sql: ${case_count} ;;
+  }
+
+  measure: total_cases_with_csat_sent {
+    label: "Case Count with CSAT Sent"
+    type: number
+    sql: count(case when ${csat_sent_at} is not null
+               then ${case_id}
+               else null end) ;;
+  }
+
+
+  dimension: issue_tracker_app_version{
+    sql: ${TABLE}.problem_tracker_app_version;;
+  }
+  dimension: issue_tracker_app_client{
+    sql: ${TABLE}.problem_tracker_app_client;;
+  }
+  dimension: issue_tracker_payment_link{
+    sql: ${TABLE}.problem_tracker_payment_link;;
+  }
+  dimension: issue_tracker_transfer_link{
+    sql: ${TABLE}.problem_tracker_transfer_link;;
+  }
+  dimension: issue_tracker_transaction_token{
+    sql: ${TABLE}.problem_tracker_transaction_token;;
+  }
+
+  # Dummy fields for drilling links -- jsolomon
+  measure: drill_fields_origin{
+    description: "dummy field"
+    type: count
+    drill_fields: [origin*]
+    hidden: yes
+  }
+
+  measure: drill_fields_case_details{
+    description: "dummy field"
+    type: count
+    drill_fields: [case_details*]
+    hidden: yes
+  }
+
+  measure: drill_fields_problem_type{
+    description: "dummy field"
+    type: count
+    drill_fields: [problem_type*]
+    hidden: yes
+  }
+
+  measure: drill_fields_problem_tag{
+    description: "dummy field"
+    type: count
+    drill_fields: [problem_tag, case_count]
+    hidden: yes
+  }
+
+dimension: pilot_started {
+## Case number limit as the datetime may have a case in the queue prior to the pilot started based on assumptiom that case is always in increment order. Will think of an efficient way.
+type: string
+sql: case when regexp_replace( ${case_number}, '[^0-9.]*' ) > 98733753 then 'Yes' else 'No' end  ;;
+}
+
+}

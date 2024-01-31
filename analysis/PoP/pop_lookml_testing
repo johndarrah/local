@@ -1,0 +1,382 @@
+# Owner: johndarrah
+# Purpose: testing
+# Notes
+# The label_from_parameter lets you use the label from the parameter: https://cloud.google.com/looker/docs/reference/param-field-label-from-parameter
+# For the masure parameter I had to use the if, elseif statement so Looker pointed to the aggregated metric.
+# For the dimension paramater, I was able to point directly to the SQL table since no aggregation was occuring
+
+view: cash_voice_cases_jad{
+  derived_table: {
+    sql:
+    SELECT *
+      FROM app_cash_cs.preprod.call_records
+      WHERE
+        call_end_time::DATE >= '2024-01-01'
+      ;;
+  }
+  
+  dimension: case_id {
+    type: string
+    sql: ${TABLE}."case_id" ;;
+  }
+  
+  ######################################
+  # End Time Parameter
+  dimension_group: call_end{
+    type: time
+    timeframes: [
+      raw,
+      time,
+      hour,
+      minute30,
+      minute15,
+      date,
+      week,
+      month,
+      quarter,
+      year
+    ]
+    # sql: CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', ${TABLE}.CALL_END_TIME) ;; # Already in PSt in Snowflake
+    sql: ${TABLE}.CALL_END_TIME ;;
+    
+  }
+  
+  parameter: call_end_granularity {
+    type: unquoted
+    allowed_value: {
+      label: "30 Minute"
+      value: "minute30"
+    }
+    allowed_value: {
+      value: "Hour"
+    }
+    allowed_value: {
+      value: "Day"
+    }
+    allowed_value: {
+      value: "Week"
+    }
+    allowed_value: {
+      value: "Month"
+    }
+    allowed_value: {
+      value: "Quarter"
+    }
+    allowed_value: {
+      value: "Year"
+    }
+  }
+  
+  dimension: call_end_parameter {
+    label_from_parameter: call_end_granularity
+    sql:
+          {% if call_end_granularity._parameter_value == 'minute30' %}
+            ${call_end_minute30}
+          {% elsif call_end_granularity._parameter_value == 'Hour' %}
+            ${call_end_hour}
+          {% elsif call_end_granularity._parameter_value == 'Day' %}
+            ${call_end_date}
+          {% elsif call_end_granularity._parameter_value == 'Week' %}
+            ${call_end_week}
+          {% elsif call_end_granularity._parameter_value == 'Month' %}
+            ${call_end_month}
+          {% elsif call_end_granularity._parameter_value == 'Quarter' %}
+            ${call_end_quarter}
+          {% elsif call_end_granularity._parameter_value == 'Year' %}
+            ${call_end_year}
+          {% else %}
+            ${call_end_date}
+          {% endif %};;
+  }
+  
+  ######################################
+  # Dimension Parameter
+  dimension: queue_name {
+    type: string
+    sql: ${TABLE}."QUEUE_NAME" ;;
+  }
+  
+  dimension: team_name {
+    type: string
+    sql: ${TABLE}."TEAM_NAME" ;;
+  }
+  
+  dimension: case_channel {
+    type: string
+    sql: ${TABLE}."CASE_CHANNEL" ;;
+  }
+  
+  parameter: dimension_granularity {
+    type: unquoted
+    allowed_value: {
+      label: "Team Name"
+      value: "team_name"
+    }
+    allowed_value: {
+      label: "Case Channel"
+      value: "case_channel"
+    }
+    allowed_value: {
+      label: "Queue Name"
+      value: "queue_name"
+    }
+  }
+  
+  dimension: dimension_parameter {
+    type: string
+    sql: ${TABLE}.{% parameter dimension_granularity %} ;;
+  }
+  
+  ######################################
+  # Dimension Parameter with field from explorer
+  dimension: quick_text_name {
+    type: string
+    sql: ${cash_case_quick_texts.quick_text_name} ;;
+  }
+  
+  dimension: problem_tag {
+    type: string
+    sql: ${cash_case_quick_texts.problem_tag} ;;
+  }
+  dimension: case_language {
+    type: string
+    sql: ${TABLE}."case_language" ;;
+  }
+  
+  parameter: dimension_granularity_2 {
+    type: unquoted
+    allowed_value: {
+      label: "Quick Text Name"
+      value: "quick_text_name"
+    }
+    allowed_value: {
+      label: "Problem Tag"
+      value: "problem_tag"
+    }
+    allowed_value: {
+      label: "Case Language"
+      value: "case_language"
+    }
+  }
+  
+  dimension: dimension_parameter_2 {
+    type: string
+    sql:
+            {% if dimension_granularity_2._parameter_value == 'quick_text_name' %}
+            ${cash_case_quick_texts.quick_text_name}
+            {% elsif dimension_granularity_2._parameter_value == 'problem_tag' %}
+            ${cash_case_quick_texts.problem_tag}
+            {% else %}
+            ${case_language}
+            {% endif %};;
+  }
+  
+  ######################################
+  # Measure Parameter
+  measure: total_talk_time {
+    type: sum
+    sql: ${TABLE}."TALK_TIME" ;;
+  }
+  
+  measure: average_talk_time {
+    type: average
+    sql: ${TABLE}."TALK_TIME" ;;
+  }
+  
+  measure: total_cases {
+    type: count_distinct
+    sql: ${TABLE}."CASE_ID" ;;
+  }
+  
+  parameter: measure_granularity {
+    type: unquoted
+    allowed_value: {
+      label: "Average Talk Time"
+      value: "average_talk_time"
+    }
+    allowed_value: {
+      label: "Total Talk Time"
+      value: "total_talk_time"
+    }
+    allowed_value: {
+      label: "Total Cases"
+      value: "total_cases"
+    }
+  }
+  
+  measure: measure_parameter {
+    label_from_parameter: measure_granularity
+    value_format: "#,##0.00"
+    sql:
+           {% if measure_granularity._parameter_value == 'average_talk_time' %}
+             ${average_talk_time}
+           {% elsif measure_granularity._parameter_value == 'total_talk_time' %}
+             ${total_talk_time}
+           {% else %}
+             ${total_cases}
+           {% endif %};;
+  }
+  
+  ######################################
+  # Period over Period (PoP) Parameter
+  
+  # dimension_group: current_timestamp {
+  #   view_label: "Period-over-Period Comparison"
+  #   label: "Current"
+  #   type: time
+  #   sql: CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', CURRENT_TIMESTAMP) ;;
+  # }
+  
+  filter: pop_date {
+    description: "using date filter to gain access to date_start and date_end liquid variables"
+    view_label: "Period-over-Period Comparison"
+    label: "PoP"
+    type: date
+    # convert_tz: no
+  }
+  
+  # dimension_group: pop {
+  #   description: "using date filter to gain access to date_start and date_end liquid variables"
+  #   view_label: "Period-over-Period Comparison"
+  #   label: "PoP"
+  #   type: time
+  #   sql:  dateadd(day,0,CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', CURRENT_TIMESTAMP)) ;;
+  # }
+  
+  dimension_group: pop_date_filter_start {
+    view_label: "Period-over-Period Comparison"
+    type: time
+    # timeframes: [raw]
+    sql:
+        case
+        when {% date_start pop_date %} is null then to_date('1970-01-01')
+        else CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', TO_TIMESTAMP(CONCAT({% date_start pop_date %},' ',TO_CHAR(CURRENT_TIMESTAMP, 'HH24:MI:SS'))))::DATE
+      end
+        ;;
+    # hidden: yes
+    }
+    dimension_group: pop_date_filter_end {
+      view_label: "Period-over-Period Comparison"
+      type: time
+      # timeframes: [raw]
+      sql:
+                  case
+                    when {% date_end pop_date %} is null then to_date('1970-01-01')
+                    else CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', TO_TIMESTAMP(CONCAT({% date_end pop_date %},' ',TO_CHAR(CURRENT_TIMESTAMP, 'HH24:MI:SS'))))::DATE
+
+                  end
+                  ;;
+              # hidden: yes
+      }
+      
+      # dimension_group: test {
+      #   description: "using date filter to gain access to date_start and date_end liquid variables"
+      #   view_label: "Period-over-Period Comparison"
+      #   type: time
+      #   sql:  dateadd(day,-1,CONVERT_TIMEZONE('UTC', 'America/Los_Angeles', CURRENT_TIMESTAMP)) ;;
+      # }
+      
+      # dimension_group: test_end_time {
+      #   view_label: "Period-over-Period Comparison"
+      #   type: time
+      #   # timeframes: [raw]
+      #   sql:
+      #             case
+      #               when {% date_end test_time %} is null then '2024-01-01'
+      #               else ({% date_end test_time %} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Los_Angeles'
+      #             end
+      #             ;;
+      #         # hidden: yes
+      #   }
+        
+        # dimension: adjusted_date_start {
+        #   type: date
+        #   sql: ({{ date_start }} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Los_Angeles' ;;
+        # }
+        
+        # dimension: adjusted_date_end {
+        #   type: date
+        #   sql: ({{ date_end }} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Los_Angeles' ;;
+        # }
+        
+        
+        # dimension_group: test_end_date {
+        #   view_label: "Period-over-Period Comparison"
+        #   type: time
+        #   # timeframes: [raw]
+        #   sql:
+        #           case
+        #             when {% date_end test_date %} is null then '2024-01-01'
+        #             else concat({% date_end test_date %},' ',TO_CHAR(CURRENT_TIMESTAMP, 'HH24:MI:SS'))
+        #           end
+        #           ;;
+        #       # hidden: yes
+        #   }
+          
+          dimension: interval {
+            view_label: "Period-over-Period Comparison"
+            type: number
+            sql: datediff(seconds, ${pop_date_filter_start_raw}, ${pop_date_filter_end_raw}) ;;
+            # hidden: yes
+          }
+          
+          dimension_group: previous_start {
+            view_label: "Period-over-Period Comparison"
+            type: time
+            # timeframes: [raw]
+            sql: dateadd(seconds, -${interval}, ${pop_date_filter_start_raw}) ;;
+            # hidden: yes
+          }
+          
+          dimension: pop_timeframes {
+            view_label: "Period-over-Period Comparison"
+            label: "PoP Timeframes"
+            type: string
+            suggestions: ["Period", "Previous Period", "Not In Range"]
+            # Not In Parameter Date Range = when the PoP Date differs from another date filter, such as Call End Date
+            # Example: https://square.cloud.looker.com/explore/Support/cash_voice_cases_jad?toggle=fil,vis&qid=LhqISHMfDtcotv3vLxwuRq
+            case: {
+              when: {
+                sql: ${call_end_raw} >= ${pop_date_filter_start_raw} AND ${call_end_raw} < ${pop_date_filter_end_raw} ;;
+                label: "Period"
+              }
+              when: {
+                sql: ${call_end_raw} >= ${previous_start_raw} AND ${call_end_raw} < ${pop_date_filter_start_raw} ;;
+                label: "Previous Period"
+              }
+              else: "Not In Range"
+            }
+          }
+          # dimension: pop_timeframes2 {
+          #   view_label: "Period-over-Period Comparison"
+          #   label: "PoP Timeframes 2"
+          #   type: string
+          #   suggestions: ["Period", "Previous Period", "Not In Parameter Date Range"]
+          #   # Not In Parameter Date Range = when the PoP Date differs from another date filter, such as Call End Date
+          #   # Example: https://square.cloud.looker.com/explore/Support/cash_voice_cases_jad?toggle=fil,vis&qid=LhqISHMfDtcotv3vLxwuRq
+          #   case: {
+          #     when: {
+          #       sql: ${call_end_date} >= ${pop_date_filter_start_date} AND ${call_end_date} < ${pop_date_filter_end_date} ;;
+          #       label: "Period"
+          #     }
+          #     when: {
+          #       sql: ${call_end_date} >= ${previous_start_date} AND ${call_end_date} < ${pop_date_filter_start_date} ;;
+          #       label: "Previous Period"
+          #     }
+          #     else: "Not In Parameter Date Range"
+          #   }
+          # }
+          
+          dimension: period_timeframe_ {
+            view_label: "Period-over-Period Comparison"
+            type: string
+            sql: concat(${pop_date_filter_start_date},' to ',${pop_date_filter_end_date})  ;;
+          }
+          dimension: previous_period_timeframe_ {
+            view_label: "Period-over-Period Comparison"
+            type: string
+            sql: concat(${previous_start_date},' to ',${pop_date_filter_start_date})  ;;
+          }
+          
+        }
+        
