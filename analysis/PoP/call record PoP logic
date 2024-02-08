@@ -1,0 +1,1659 @@
+######################################
+# Owner: johndarrah
+
+# Nomenclature Rules
+# group labels are prefixed with "_" so they apprear at the top of views
+# all PoP related fields are suffixed with "PoP"
+# parameter fields: behave as a filter = group_label: "_Filters"
+# granularity fields = behave as a parameter = group_label: "_Parameters"
+
+######################################
+
+view: cash_call_records {
+  sql_table_name:
+  {% if _user_attributes['is_cash_bpo'] == '0' %} APP_CASH_CS.PREPROD.CALL_RECORDS {% else %} bpo_app_cash_cs.public.call_records {% endif %};;
+
+  ######################################
+  # Period-over-Period (PoP) Comparisons
+
+    filter: pop_date_pt {
+      ##using date filter to gain access to date_start and date_end liquid variables
+      group_label: "_Filters PoP"
+      label: "Current Period Date Range"
+      type: date
+    }
+
+    # dimension: day_in_period__call_date {
+    #   group_label: "_Parameters PoP"
+    #   label: "Current Period Day Number"
+    #   # hidden: yes
+    #   description: "Gives the number of days since the start of each period. Use this to align the event dates onto the same axis, the axes will read 1,2,3, etc."
+    #   type: number
+    #   sql:
+    #       {% if pop_date_pt._is_filtered %}
+    #           CASE
+    #           WHEN ${call_start_time_time} between ${pop_date_filter_start} and ${pop_date_filter_end}
+    #             then
+    #               case
+    #                 when ${date_granularity._parameter_value} = 'minute30'
+    #                   THEN DATEDIFF(minute, ${pop_date_filter_start}, ${call_start_time_time}) + 1
+    #                 when ${date_granularity._parameter_value} = 'Hour'
+    #                   THEN DATEDIFF(hour, ${pop_date_filter_start}, ${call_start_time_time}) + 1
+    #                 else
+    #                   DATEDIFF(DAY, ${pop_date_filter_start}, ${call_start_time_time}) + 1
+    #           WHEN ${call_start_time_time} between ${previous_start} and ${pop_date_filter_start}
+    #             then
+    #               case
+    #                 when ${date_granularity._parameter_value} = 'minute30'
+    #                   THEN DATEDIFF(minute, ${previous_start}, ${call_start_time_time}) + 1
+    #                 when ${date_granularity._parameter_value} = 'Hour'
+    #                   THEN DATEDIFF(hour, ${previous_start}, ${call_start_time_time}) + 1
+    #                 else
+    #                   DATEDIFF(DAY, ${previous_start}, ${call_start_time_time}) + 1
+    #           END
+    #       {% else %} NULL
+    #       {% endif %}
+    #       ;;
+    # }
+
+    dimension: day_in_period__call_date {
+      group_label: "_Parameters PoP"
+      label: "Current Period Day Number"
+      hidden: yes
+      description: "Gives the number of days since the start of each period. Use this to align the event dates onto the same axis, the axes will read 1,2,3, etc."
+      type: number
+      label_from_parameter: date_granularity
+      sql:
+          {% if pop_date_pt._is_filtered %}
+            CASE
+              WHEN ${call_start_time_time} BETWEEN ${pop_date_filter_start} AND ${pop_date_filter_end} THEN
+                {% if date_granularity._parameter_value == 'minute30' %}
+                  DATEDIFF(minute, ${pop_date_filter_start}, ${call_start_time_time}) / 30
+                {% elsif date_granularity._parameter_value == 'Hour' %}
+                  DATEDIFF(hour, ${pop_date_filter_start}, ${call_start_time_time})
+                {% else %}
+                  DATEDIFF(day, ${pop_date_filter_start}, ${call_start_time_time}) + 1
+                {% endif %}
+              WHEN ${call_start_time_time} BETWEEN ${previous_start} AND ${pop_date_filter_start} THEN
+                {% if date_granularity._parameter_value == 'minute30' %}
+                  DATEDIFF(minute, ${previous_start}, ${call_start_time_time}) / 30
+                {% elsif date_granularity._parameter_value == 'Hour' %}
+                  DATEDIFF(hour, ${previous_start}, ${call_start_time_time})
+                {% else %}
+                  DATEDIFF(day, ${previous_start}, ${call_start_time_time}) + 1
+                {% endif %}
+              ELSE NULL
+            END
+          {% else %} NULL
+          {% endif %}
+          ;;
+    }
+
+
+    dimension_group: in_previous_period__call_date {
+      group_label: "_Parameters PoP"
+      description: "Use this as your grouping dimension when comparing periods. Aligns the previous periods onto the current period"
+      label: "Previous Period Date"
+      hidden: yes
+      type: time
+      sql: DATEADD(DAY, ${day_in_period__call_date} - 1, ${previous_start}) ;;
+      timeframes: [
+        date,
+        week,
+        quarter,
+        month,
+        year]
+    }
+
+    # dimension_group: in_period__call_date {
+    #   group_label: "_Parameters PoP"
+    #   description: "Use this as your grouping dimension when comparing periods. Aligns the previous periods onto the current period"
+    #   label: "Current Period Date"
+    #   type: time
+    #   sql: DATEADD(DAY, ${day_in_period__call_date} - 1, ${pop_date_filter_start}) ;;
+    #   timeframes: [
+    #     minute30,
+    #     hour,
+    #     date,
+    #     week,
+    #     quarter,
+    #     month,
+    #     year]
+    #   # hidden: yes
+    # }
+
+    dimension_group: in_period__call_date {
+      group_label: "_Parameters PoP"
+      description: "Use this as your grouping dimension when comparing periods. Aligns the previous periods onto the current period"
+      label: "Current Period Date"
+      label_from_parameter: date_granularity
+      type: time
+      sql:
+          {% if date_granularity._parameter_value == 'minute30' %}
+              DATEADD(minute, (${day_in_period__call_date} - 1) * 30, ${pop_date_filter_start})
+            {% elsif date_granularity._parameter_value == 'Hour' %}
+              DATEADD(hour, ${day_in_period__call_date} - 1, ${pop_date_filter_start})
+                  {% else %}
+
+            DATEADD(day, ${day_in_period__call_date} - 1, ${pop_date_filter_start})
+            {% endif %};;
+      timeframes: [minute30, hour, date, week, quarter, month, year]
+      # hidden: yes
+    }
+
+
+    dimension: current_time {
+      type: date_time
+      sql: current_timestamp ;;
+    }
+
+    dimension: in_period_parameter__call_date {
+      group_label: "_Parameters PoP"
+      label: "Current Period Date Parameter"
+      description: "Allows for PoP comparison on the same axis. Current & Previous Periods will share the same dates based on the Current Period"
+      label_from_parameter: date_granularity
+      sql:
+      {% if date_granularity._parameter_value == 'minute30' %}
+      ${in_period__call_date_minute30}
+      {% elsif date_granularity._parameter_value == 'Hour' %}
+      ${in_period__call_date_hour}
+      {% elsif date_granularity._parameter_value == 'Day' %}
+      ${in_period__call_date_date}
+      {% elsif date_granularity._parameter_value == 'Week' %}
+      ${in_period__call_date_week}
+      {% elsif date_granularity._parameter_value == 'Month' %}
+      ${in_period__call_date_month}
+      {% elsif date_granularity._parameter_value == 'Quarter' %}
+      ${in_period__call_date_quarter}
+      {% elsif date_granularity._parameter_value == 'Year' %}
+      ${in_period__call_date_year}
+      {% else %}
+      null
+      {% endif %};;
+    }
+
+    dimension: in_previous_period_parameter__call_date {
+      group_label: "_Parameters PoP"
+      label: "Previous Period Date Parameter"
+      label_from_parameter: date_granularity
+      sql:
+      {% if date_granularity._parameter_value == 'Day' %}
+      ${in_previous_period__call_date_date}
+      {% elsif date_granularity._parameter_value == 'Week' %}
+      ${in_previous_period__call_date_week}
+      {% elsif date_granularity._parameter_value == 'Month' %}
+      ${in_previous_period__call_date_month}
+      {% elsif date_granularity._parameter_value == 'Quarter' %}
+      ${in_previous_period__call_date_quarter}
+      {% elsif date_granularity._parameter_value == 'Year' %}
+      ${in_previous_period__call_date_year}
+      {% else %}
+      null
+      {% endif %};;
+    }
+    dimension: pop_date_filter_start {
+      description: "The starting date for the PoP filter. If no start date then go back to the start of Unix time."
+      group_label: "_Parameters PoP"
+      type: date_time
+      sql:
+          case
+            when {% date_start pop_date_pt %} is null then to_date('1970-01-01')
+            else TO_TIMESTAMP(CONCAT({% date_start pop_date_pt %}::DATE,' ',TO_CHAR(CURRENT_TIMESTAMP, 'HH24:MI:SS')))
+          end
+          ;;
+    # hidden: yes
+      }
+
+      dimension: pop_date_filter_end {
+        description: "The ending date for the PoP filter. If no date then go as far as current date."
+        group_label: "_Parameters PoP"
+        type: date_time
+        sql:
+          case
+            when {% date_end pop_date_pt %} is null then current_date()
+            else TO_TIMESTAMP(CONCAT({% date_end pop_date_pt %}::DATE,' ',TO_CHAR(CURRENT_TIMESTAMP, 'HH24:MI:SS')))
+          end
+          ;;
+    # hidden: yes
+        }
+
+        dimension: interval {
+          description: "Seconds between start date and end date."
+          group_label: "_Parameters PoP"
+          type: number
+          sql: datediff(seconds, ${pop_date_filter_start}, ${pop_date_filter_end}) ;;
+          hidden: yes
+        }
+
+        dimension: previous_start {
+          description: "Start date of the period chosen minus the number of seconds in the interval."
+          group_label: "_Parameters PoP"
+          type: date_time
+          sql: dateadd(seconds, -${interval}, ${pop_date_filter_start}) ;;
+          # hidden: yes
+        }
+
+        dimension: pop_timeframes {
+          description: "Period is the period filtered. Previous period is the period prior. Not in Range is any date outside of the period and previous period."
+          group_label: "_Parameters PoP"
+          label: "Period Timeframe"
+          type: string
+          suggestions: ["Current Period", "Previous Period", "Not In Range"]
+          case: {
+            when: {
+              sql: ${call_start_time_raw} >= ${pop_date_filter_start} AND ${call_start_time_raw} < ${pop_date_filter_end} ;;
+              label: "Current Period"
+            }
+            when: {
+              sql: ${call_start_time_raw} >= ${previous_start} AND ${call_start_time_raw} < ${pop_date_filter_start} ;;
+              label: "Previous Period"
+            }
+            else: "Not In Range"
+          }
+        }
+
+        dimension: pop_timeframe_dates {
+          description: "Period is the period filtered. Previous period is the period prior. Not in Range is any date outside of the period and previous period."
+          group_label: "_Parameters PoP"
+          label: "Period Timeframe Dates"
+          type: string
+          sql: case
+                when ${pop_timeframes}='Current Period'
+                then ${current_period_timeframe_dates}
+                when ${pop_timeframes}='Previous Period'
+                then ${previous_period_timeframe_dates}
+                else null
+                end;;
+        }
+
+        dimension: current_period_timeframe_dates {
+          group_label: "_Parameters PoP"
+          type: string
+          sql: concat(${pop_date_filter_start},' to ',dateadd(day,-1,${pop_date_filter_end})::DATE)  ;;
+        }
+        dimension: previous_period_timeframe_dates {
+          group_label: "_Parameters PoP"
+          type: string
+          sql: concat(${previous_start}::DATE,' to ',dateadd(day,-1,${pop_date_filter_start})::DATE)  ;;
+        }
+
+        # end of period over period comparison block
+        ######################################
+
+        ######################################
+        # Parameters
+
+        parameter: date_granularity {
+          type: unquoted
+          group_label: "_Filters"
+          allowed_value: {
+            label: "30 Minute"
+            value: "minute30"
+          }
+          allowed_value: {
+            value: "Hour"
+          }
+          allowed_value: {
+            value: "Day"
+          }
+          allowed_value: {
+            value: "Week"
+          }
+          allowed_value: {
+            value: "Month"
+          }
+          allowed_value: {
+            value: "Quarter"
+          }
+          allowed_value: {
+            value: "Year"
+          }
+        }
+
+        dimension: date_pt_parameter {
+          label_from_parameter: date_granularity
+          description: "PST Call start date parameter."
+          group_label: "_Parameters"
+          label: "Call Date Parameter"
+          sql:
+                  {% if date_granularity._parameter_value == 'minute30' %}
+                    ${call_start_time_minute30}
+                  {% elsif date_granularity._parameter_value == 'Hour' %}
+                    ${call_start_time_hour}
+                  {% elsif date_granularity._parameter_value == 'Day' %}
+                    ${call_start_time_date}
+                  {% elsif date_granularity._parameter_value == 'Week' %}
+                    ${call_start_time_week}
+                  {% elsif date_granularity._parameter_value == 'Month' %}
+                    ${call_start_time_month}
+                  {% elsif date_granularity._parameter_value == 'Quarter' %}
+                    ${call_start_time_quarter}
+                  {% elsif date_granularity._parameter_value == 'Year' %}
+                    ${call_start_time_year}
+                  {% else %}
+                    ${call_start_time_date}
+                  {% endif %};;
+        }
+
+        parameter: volume_granularity {
+          group_label: "_Filters"
+          type: string
+          allowed_value: {
+            label: "Inbound Calls"
+            value: "inbound"
+          }
+          allowed_value: {
+            label: "Handled Calls"
+            value: "handled"
+          }
+          allowed_value: {
+            label: "Callbakcs Requested"
+            value: "callbacks_requested"
+          }
+          allowed_value: {
+            label: "Unique Callers"
+            value: "unique_callers"
+          }
+          allowed_value: {
+            label: "Unique Callers Handled"
+            value: "unique_callers_handled"
+          }
+        }
+
+        measure: volume_parameter {
+          group_label: "_Parameters"
+          label_from_parameter: volume_granularity
+          type: number
+          sql:
+              CASE
+              WHEN {% parameter volume_granularity %} = 'inbound'
+                THEN ${inbound}
+              WHEN {% parameter volume_granularity %} = 'handled'
+                THEN ${calls_handled}
+              WHEN {% parameter volume_granularity %} = 'callbacks_requested'
+                THEN ${callbacks_requested}
+              WHEN {% parameter volume_granularity %} = 'unique_callers'
+                THEN ${unique_callers}
+              WHEN {% parameter volume_granularity %} = 'unique_callers_handled'
+                THEN ${unique_handled_callers}
+              else null
+              END;;
+        }
+
+        # End of Parameters
+        ######################################
+
+        ## squarewave: https://squarewave.sqprod.co/#/jobs/841
+        dimension: contact_id {
+          type: string
+          sql: ${TABLE}."CONTACT_ID" ;;
+          #added for drill downs by @kwabena req from @rheaps
+          link: {
+            label: "Amazon Connect"
+            url: "https://squarecc-us-prod-v1.awsapps.com/connect/contact-trace-records/details/{{contact_id}}?tz=America/Los_Angeles"
+          }
+          primary_key: yes
+        }
+
+        dimension_group: call_start_time{
+          description: "PST Call Timestamp"
+          # convert_tz: no
+          label: "Call TS"
+          type: time
+          timeframes: [
+            raw,
+            time,
+            time_of_day,
+            minute,
+            hour,
+            minute30,
+            minute15,
+            date,
+            week,
+            month,
+            quarter,
+            year
+          ]
+          sql: CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', ${TABLE}."CALL_START_TIME");;
+          drill_fields: [call_start_raw]
+        }
+
+
+        dimension: call_start_time_minute_30_short {
+          sql: ${call_start_time_minute30};;
+          html: {{rendered_value | date: '%R'}} ;;
+        }
+
+        dimension: call_end_time_minute_15_short {
+          sql:REPLACE(${call_end_time_minute15},LEFT(${call_end_time_minute15},11),'')  ;;
+        }
+
+        dimension:  call_start_raw{
+          type: date_time
+          sql: ${TABLE}."CALL_START_TIME" ;;
+        }
+
+        dimension_group: call_end_time{
+          type: time
+          timeframes: [
+            raw,
+            time,
+            hour,
+            minute30,
+            minute15,
+            date,
+            week,
+            month,
+            quarter,
+            year
+          ]
+          sql: ${TABLE}."CALL_END_TIME";;
+        }
+
+        dimension: call_end_raw {
+          type: date_time
+          description: "timestamp of the call end"
+          sql: ${TABLE}."CALL_END_TIME" ;;
+        }
+
+        dimension: wait_start_raw {
+          type: date_time
+          sql: ${TABLE}."WAIT_START_TIME" ;;
+        }
+
+        dimension_group: wait_start_time{
+          type: time
+          timeframes: [
+            raw,
+            time,
+            time_of_day,
+            minute,
+            hour,
+            minute30,
+            date,
+            week,
+            month,
+            quarter,
+            year
+          ]
+          sql: ${TABLE}."WAIT_START_TIME";;
+          drill_fields: [wait_start_raw]
+        }
+
+        dimension_group: wait_end_time{
+          type: time
+          timeframes: [
+            raw,
+            time,
+            hour,
+            minute30,
+            date,
+            week,
+            month,
+            quarter,
+            year
+          ]
+          sql: ${TABLE}."WAIT_END_TIME";;
+        }
+
+        dimension: wait_endtime_raw {
+          type: date_time
+          sql: ${TABLE}."WAIT_END_TIME" ;;
+        }
+
+        dimension: call_date{
+          type: date
+          description: "date of the call contact"
+          sql: ${TABLE}."CALL_DATE" ;;
+        }
+
+        dimension_group: call_date_pt {
+          description: "PST Call Date"
+          type: time
+          timeframes: [
+            raw,
+            date,
+            day_of_week,
+            day_of_week_index,
+            week,
+            month,
+            quarter,
+            year
+          ]
+          convert_tz: no
+          datatype: date
+          sql: ${TABLE}."CALL_DATE" ;;
+        }
+
+        dimension_group: callback_time{
+          type: time
+          timeframes: [
+            raw,
+            hour,
+            minute30,
+            date,
+            week,
+            month,
+            quarter,
+            year
+          ]
+          sql: ${TABLE}."CALLBACK_TIME";;
+        }
+
+        dimension: customer_endpoint{
+          type: string
+          description: "hashed customer phone number"
+          sql: ${TABLE}."CUSTOMER_ENDPOINT" ;;
+        }
+
+        dimension: system_endpoint{
+          type: string
+          description: "cash app phone number"
+          sql: ${TABLE}."SYSTEM_ENDPOINT" ;;
+        }
+
+
+        dimension:  speed_to_callback{
+          type: number
+          description: "time in seconds from requested callback to callback contact"
+          sql:  ${TABLE}."SPEED_TO_CALLBACK" ;;
+        }
+
+        dimension: connection_attempts{
+          type: string
+          description: "number of times amazon tried to connect the call with an advocate"
+          sql: ${TABLE}."CONNECTION_ATTEMPTS" ;;
+        }
+
+        dimension: queue_name{
+          type:  string
+          description: "the queue name that the call was taken in"
+          sql: ${TABLE}."QUEUE_NAME" ;;
+        }
+
+        dimension: customer_contact_that_day {
+          type: number
+          description: "the nth of time that day the customer called"
+          sql: ${TABLE}."CUSTOMER_CONTACT_THAT_DAY" ;;
+        }
+        dimension: disconnect_reason {
+          type: string
+          description: "disconnect reason from amazon connect"
+          sql: ${TABLE}."DISCONNECT_REASON" ;;
+        }
+        dimension: raw_ivr_outcome{
+          type: string
+          sql: ${TABLE}."RAW_IVR_OUTCOME" ;;
+        }
+        dimension: next_contact_id {
+          type: string
+          description: "If this contact is related to other contacts, this is the ID of the next contact"
+          sql: ${TABLE}."NEXT_CONTACT_ID" ;;
+        }
+        dimension: next_call_start_time_raw{
+          type: date_time
+          label: "Next Call Start Time"
+          description: "next contact call start time"
+          sql: ${TABLE}."NEXT_CONTACT_CALL_START_TIME" ;;
+        }
+        dimension: next_call_end_time_raw{
+          type: date_time
+          label: "Next Call End Time"
+          description: "next contact call end time"
+          sql: ${TABLE}."NEXT_CONTACT_CALL_END_TIME" ;;
+        }
+        dimension: speed_to_next_call {
+          type: number
+          label: "Speed To Call Back"
+          description: "speed between the the current call record and the next contact id"
+          sql: ${TABLE}."SPEED_TO_NEXT_CALL";;
+
+        }
+
+        dimension: initial_contact_id {
+          type: string
+          description: "If this contact is related to other contacts, this is the ID of the initial contact"
+          sql: ${TABLE}."INITIAL_CONTACT_ID" ;;
+        }
+        dimension: is_initial_contact {
+          type: yesno
+          description: " this the flag for an ID of the initial contact"
+          sql: case when ${initial_contact_id} is not null then TRUE else FALSE end ;;
+        }
+
+        dimension: agent_user_name {
+          type: string
+          description: "agent_user_name used to login"
+          sql: ${TABLE}."AGENT_USER_NAME" ;;
+        }
+
+        dimension: agent_num_holds {
+          type: number
+          description: "number of times the advocate put the customer on hold this call"
+          sql: ${TABLE}."AGENT_NUM_HOLDS" ;;
+        }
+
+        dimension: talk_time {
+          type: number
+          description: "time customer talked to advocate"
+          sql: ${TABLE}."TALK_TIME" ;;
+        }
+
+        dimension: wrap_time {
+          type: number
+          description: "time customer spent in after call wrap state"
+          sql: ${TABLE}."WRAP_TIME" ;;
+        }
+
+        dimension: hold_time {
+          type: number
+          description: "time customer spent on hold"
+          sql: ${TABLE}."HOLD_TIME" ;;
+        }
+
+        dimension: handle_time {
+          type: number
+          description: "defined in data dictionary (talk + hold (interaction time) + wrap)"
+          sql: ${TABLE}."HANDLE_TIME" ;;
+        }
+
+        dimension: wait_time {
+          type: number
+          description: "time spent in queue before being connected to an agent"
+          sql: ${TABLE}."WAIT_TIME" ;;
+        }
+
+        dimension: wait_time_buckets {
+          sql:
+               CASE
+               WHEN ${wait_time} between 0 and 5 then '00-5 secs'
+               WHEN ${wait_time} between 5 and 10 then '5-10 secs'
+               WHEN ${wait_time} between 10 and 15 then '10-15 secs'
+               WHEN ${wait_time} between 15 and 20 then '15-20 secs'
+               WHEN ${wait_time} between 20 and 25 then '20-25 secs'
+               WHEN ${wait_time} between 25 and 30 then '25-30 secs'
+               WHEN ${wait_time} between 30 and 35 then '30-35 secs'
+               WHEN ${wait_time} between 35 and 40 then '35-40 secs'
+               WHEN ${wait_time} between 40 and 45 then '40-45 secs'
+               WHEN ${wait_time} between 45 and 50 then '45-50 secs'
+               WHEN ${wait_time} between 50 and 55 then '50-55 secs'
+               WHEN ${wait_time} between 55 and 60 then '56-60 secs'
+               WHEN ${wait_time} >=60 then '60+ secs'
+               ELSE NULL
+               END ;;
+        }
+
+        dimension: initiation_method {
+          type: string
+          description: "shows different types of call, inbound, outbound, etc"
+          sql: ${TABLE}."INITIATION_METHOD" ;;
+        }
+
+        dimension: requested_callback {
+          type: string
+          description: "boolean flag for callback"
+          sql: ${TABLE}."REQUESTED_CALLBACK" ;;
+        }
+
+        dimension: is_customer {
+          type: yesno
+          sql: ${TABLE}."IS_CUSTOMER" ;;
+        }
+
+        dimension: hit_volume_threshold {
+          type: yesno
+          description: "boolean flag for reaching volume threshold - current threshold 10k 7/1/22"
+          sql: ${TABLE}."HIT_VOLUME_THRESHOLD" ;;
+        }
+
+        dimension: is_handled {
+          type: yesno
+          description: "boolean flag for if the call is handled"
+          sql: ${TABLE}."IS_HANDLED" ;;
+        }
+
+        dimension: out_of_hours {
+          type: yesno
+          description: "boolean flag for call being out of hours"
+          sql: ${TABLE}."OUT_OF_HOURS" ;;
+        }
+
+        dimension: is_queued {
+          type: yesno
+          description: "boolean flag for if there is a queue_name associated if call_record"
+          sql: ${TABLE}."IS_QUEUED" ;;
+        }
+        dimension: rejected_queued {
+          type: yesno
+          description: "boolean flag for customer number already in queue for callback"
+          sql: ${TABLE}."REJECTED_QUEUED" ;;
+        }
+        measure: unique_rejected_callers {
+          type: number
+          description: "number of distinct phone numbers that were rejected and already queued"
+          sql: count(distinct case when ${rejected_queued} = true then ${customer_endpoint} else null end) ;;
+        }
+
+        dimension: call_outcome {
+          type: string
+          description: "call outcomes for all inbound contacts"
+          sql: CASE WHEN ${initiation_method} = 'INBOUND'
+                   AND ${is_handled} = TRUE
+                   THEN 'Handled Inbound'
+              WHEN ${initiation_method} = 'INBOUND'
+                   AND ${requested_callback} = TRUE
+                   THEN 'Requested Callback'
+              WHEN ${initiation_method} = 'INBOUND'
+                   AND ${requested_callback} = FALSE
+                   THEN 'Did Not Request Callback'
+              WHEN ${initiation_method} = 'INBOUND'
+                   AND ${hit_volume_threshold} = TRUE
+                   THEN 'Rejected, Volume Threshold'
+              WHEN ${initiation_method} = 'INBOUND'
+                   AND ${out_of_hours} = TRUE
+                   THEN 'Rejected, Out of Hours'
+              WHEN ${initiation_method} = 'INBOUND'
+                   AND ${rejected_queued} = TRUE
+                   THEN 'Rejected, Already Queued'
+              WHEN ${is_abandoned} = TRUE
+                   THEN 'Call Abandoned'
+                        ELSE NULL END ;;
+        }
+
+        dimension: speed_to_callback_buckets {
+          sql:
+               CASE
+               WHEN ${speed_to_callback} between 0 and 299 then '00-05 mins'
+               WHEN ${speed_to_callback} between 300 and 599 then '05-10 mins'
+               WHEN ${speed_to_callback} between 600 and 899 then '10-15 mins'
+               WHEN ${speed_to_callback} between 900 and 1799 then '15-30 mins'
+               WHEN ${speed_to_callback} >=1800 then '30+ mins'
+               ELSE NULL
+               END ;;
+        }
+
+        dimension: time_slot{
+          #added by @jsolomon
+          description: "Based on call start time."
+          case: {
+            when: {
+              sql:  extract(hour from ${TABLE}."CALL_START_TIME") between 0 and 5;;
+              label: "Midnight to 6am"
+            }
+            when: {
+              sql:  extract(hour from ${TABLE}."CALL_START_TIME") between 6 and 11;;
+              label: "6am to Noon"
+            }
+            when: {
+              sql:  extract(hour from ${TABLE}."CALL_START_TIME") between 12 and 16;;
+              label: "Noon to 5pm"
+            }
+            when: {
+              sql:  extract(hour from ${TABLE}."CALL_START_TIME") between 17 and 23;;
+              label: "5pm to Midnight"
+            }
+          }
+        }
+
+
+        dimension: time_slot_2{
+          #added by @mattshort
+          description: "Based on call start time."
+          case: {
+            when: {
+              sql:  extract(hour from ${TABLE}."CALL_START_TIME") between 0 and 5;;
+              label: "Midnight to 6am"
+            }
+            when: {
+              sql:  extract(hour from ${TABLE}."CALL_START_TIME") between 6 and 8;;
+              label: "6am to 9am"
+            }
+            when: {
+              sql:  extract(hour from ${TABLE}."CALL_START_TIME") between 9 and 11;;
+              label: "9am to Noon"
+            }
+            when: {
+              sql:  extract(hour from ${TABLE}."CALL_START_TIME") between 12 and 13;;
+              label: "Noon to 2pm"
+            }
+            when: {
+              sql:  extract(hour from ${TABLE}."CALL_START_TIME") between 14 and 16;;
+              label: "2pm to 5pm"
+            }
+            when: {
+              sql:  extract(hour from ${TABLE}."CALL_START_TIME") between 17 and 23;;
+              label: "5pm to Midnight"
+            }
+          }
+        }
+
+        dimension: is_voicemail{
+          type: yesno
+          description: "boolean flag for voicemail contacts"
+          sql: ${TABLE}."IS_VOICEMAIL";;
+        }
+
+        dimension: rejected_voicemail {
+          type: yesno
+          description: "boolean flag for if an advocate was not able to leave a voicemail"
+          sql: ${TABLE}."REJECTED_VOICEMAIL" ;;
+        }
+
+        dimension: had_previous_email_case{
+          type: yesno
+          description: "boolean flag for if case had email case in last 7 days"
+          sql: ${TABLE}."HAD_PREVIOUS_EMAIL_CASE";;
+        }
+
+        dimension: had_previous_chat_case{
+          type: yesno
+          description: "boolean flag for if case had messaging case in last 7 days"
+          sql: ${TABLE}."HAD_PREVIOUS_CHAT_CASE";;
+        }
+
+        dimension: case_id{
+          group_label: "Case Info"
+          type: string
+          sql: ${TABLE}."CASE_ID";;
+        }
+
+        dimension: case_number{
+          group_label: "Case Info"
+          type: string
+          sql: ${TABLE}."CASE_NUMBER";;
+          link: {
+            label: "Salesforce"
+            url: "https://cf1.lightning.force.com/lightning/r/Case/{{case_id}}/view"
+          }
+        }
+
+        dimension_group: case_created{
+          type: time
+          timeframes: [
+            raw,
+            date,
+            week,
+            month,
+            quarter,
+            year
+          ]
+          sql: ${TABLE}."CASE_CREATED_DATE";;
+        }
+
+        dimension: case_customer_token{
+          group_label: "Case Info"
+          description: "case c_token"
+          type: string
+          sql: ${TABLE}."CASE_CUSTOMER_TOKEN";;
+        }
+
+        dimension: case_channel{
+          group_label: "Case Info"
+          description: "case channel"
+          type: string
+          sql: ${TABLE}."CASE_CHANNEL";;
+        }
+
+        dimension: case_csat_sent{
+          description: "boolean flag for if case had survey sent"
+          type: yesno
+          sql: ${TABLE}."CASE_CSAT_SENT";;
+        }
+        #Added 9/17 for to identify spanish cases for spanish voice project
+        #kwaby
+        dimension: case_language {
+          label: "Case Language"
+          type: string
+          sql: ${TABLE}."CASE_LANGUAGE" ;;
+        }
+        dimension: is_pii_passed {
+          label: "Is Voice PII Workflow Passed (T/F)"
+          type: string
+          sql: ${TABLE}.IS_VOICE_PII_PASSED ;;
+        }
+        dimension: is_voice_pii {
+          label: "Is Voice PII Workflow Used (T/F)"
+          description: "Calls Under New Authentication Model"
+          type: string
+          sql: CASE
+            WHEN IS_VOICE_PII_PASSED is not null THEN true
+            ELSE false;;
+        }
+        dimension: is_abandoned {
+          label: "Is Abandoned"
+          description: "flag for call record if customer abandoned the call"
+          type: yesno
+          sql: ${TABLE}."IS_ABANDONED" ;;
+
+        }
+        dimension: transfer_completed_timestamp {
+          label: "Transfer Timestamp"
+          description: "time stamp of transfer completed"
+          type: string
+          sql: ${TABLE}."TRANSFER_COMPLETED_TIMESTAMP" ;;
+        }
+        dimension: transferred_to_endpoint {
+          label: "Transfer Endpoint"
+          description: "Phone Number to Endpoint"
+          type: string
+          sql: ${TABLE}."TRANSFER_COMPLETED_TIMESTAMP" ;;
+        }
+
+        dimension: previous_inbound_call_contact_id{
+          type: string
+          description: "Contact ID of customer's previous inbound call on each call date (if they had a previous call)"
+          sql: ${TABLE}."PREVIOUS_INBOUND_CALL_CONTACT_ID" ;;
+        }
+
+        dimension: previous_inbound_call_time {
+          description: "Call Start Time of customer's previous inbound call on each call date"
+          type: date_time
+          sql: ${TABLE}."PREVIOUS_INBOUND_CALL_TIME" ;;
+        }
+
+        dimension: inbound_call_difference_seconds {
+          type: number
+          description: "Difference between the customer's current inbound call and their previous inbound call"
+          sql: ${TABLE}."INBOUND_CALL_DIFFERENCE_SECONDS" ;;
+        }
+
+        dimension: customer_inbound_call_that_day {
+          type: number
+          description: "Nth time a customer did an inbound call that day"
+          sql: ${TABLE}."CUSTOMER_INBOUND_CALL_THAT_DAY" ;;
+        }
+
+        dimension: hourly_comparison {
+          type: yesno
+          description: "How different days compare up to current Hour (2PM Monday vs 2PM Tuesday)"
+          sql: CASE WHEN REPLACE(TIMEADD(HOUR,8,CALL_START_TIME),LEFT(TIMEADD(HOUR,8,CALL_START_TIME),11),'')<=
+            CURRENT_TIME THEN TRUE ELSE FALSE END;;
+        }
+        ##Aggregates
+
+        measure: dialouts {
+          description: "advocates manually dialing out"
+          type: number
+          sql:  COUNT(distinct case when ${initiation_method}='OUTBOUND' then ${contact_id} else null end) ;;
+          drill_fields: [call_start_raw]
+        }
+
+        measure: calls_offered {
+          description: "advocates being connected to customers by Connect"
+          type: number
+          sql: COUNT(distinct case when ${initiation_method} in ('API', 'CALLBACK') then ${contact_id}
+                             when ${initiation_method} = 'INBOUND' AND ${callback_time_raw} IS NULL then ${contact_id}
+                else null end);;
+        }
+        measure: total_interaction_time {
+          label: "Total Interaction Time"
+          description: "defined in data dictionary (talk + hold)"
+          type: number
+          sql: ${total_talk_time} + ${total_hold_time} ;;
+        }
+        measure: avg_interaction_time{
+          type: number
+          description: "defined in data dictionary (talk + hold (interaction time) + wrap)"
+          sql: ${total_interaction_time}/86400/nullif(${calls_handled}, 0);;
+          value_format: "[h]\h m\m s\s"
+        }
+
+        measure: avg_interaction_time_raw_seconds {
+          type:  number
+          description: "Average Interaction Time in Seconds (Raw)"
+          sql: ${total_interaction_time}/nullif(${calls_handled}, 0);;
+        }
+
+
+        measure: avg_raw_interaction_time_minutes{
+          label: "Average Interaction Time in minutes (Raw)"
+          type: number
+          description: "defined in data dictionary (talk + hold (interaction time) + wrap), no format"
+          sql: ${total_interaction_time}/60/nullif(${calls_handled}, 0);;
+        }
+
+        measure: callbacks {
+          type: number
+          description: "automated callbacks initiated by the system from a callback requested"
+          sql: COUNT(distinct case when ${requested_callback} = TRUE then ${contact_id} else null end) ;;
+        }
+
+        measure: inbound {
+          type: number
+          description: "number of inbound calls to an active phone number"
+          sql:  COUNT(distinct case when ${initiation_method} = 'INBOUND' then ${contact_id} else null end) ;;
+        }
+
+        measure: inbound_rejected_out_of_hours{
+          type: number
+          description: "number of inbound calls to an active phone number, (out of hours)"
+          sql:  COUNT(distinct case when ${initiation_method} = 'INBOUND' and ${out_of_hours} = 'yes' then ${contact_id} else null end) ;;
+        }
+
+        measure: handled_inbound {
+          type: number
+          description: "number of calls handled in realtime"
+          sql:  COUNT(distinct case when ${initiation_method} = 'INBOUND' AND ${is_handled} = TRUE then ${contact_id} else null end) ;;
+        }
+        measure: rejected_volume_threshold_inbound {
+          label: "Inbound, Rejected Due To Volume Threshold"
+          type: number
+          sql: COUNT(distinct
+                   CASE
+                   WHEN ${initiation_method} = 'INBOUND'
+                   AND ${hit_volume_threshold} = TRUE
+                   THEN ${contact_id} else null end) ;;
+        }
+        measure: unique_callers {
+          type: number
+          description: "number of distinct phone numbers"
+          sql: COUNT(distinct ${customer_endpoint}) ;;
+        }
+        measure: unique_handled_callers {
+          type: number
+          description: "number of distinct phone numbers that were handled contact"
+          sql:count(distinct case when ${is_handled} = true then ${customer_endpoint} else null end) ;;
+        }
+        measure: customer_callers {
+          description: "distinct customers we contacted"
+          type: number
+          sql: COUNT(distinct CASE WHEN ${is_customer} = TRUE THEN ${contact_id} ELSE NULL END) ;;
+        }
+
+        measure: non_customer_calls{
+          type: number
+          sql: COUNT(distinct CASE WHEN ${is_customer} = FALSE THEN ${contact_id} ELSE NULL END) ;;
+        }
+
+        #measure:  calls_rejected{
+        #type: number
+        #sql:  COUNT(DISTINCT CASE WHEN ${initiation_method} = 'API' AND ${raw_ivr_outcome} = 'pressed_2' THEN ${contact_id}
+        #WHEN ${initiation_method} = 'INBOUND' AND ${requested_callback} = FALSE THEN ${contact_id}
+        #ELSE NULL END)       ;;
+        #}#ali needs to ask patrick and jordan if this is right
+
+        measure: calls_abandoned {
+          type: number
+          description: "How many times the customer was in the inbound environment, didn't request a callback, and then abandoned before reaching an advocate during HOOPs"
+          sql: COUNT(DISTINCT CASE WHEN ${initiation_method} = 'API'
+                                  AND ${is_handled} = FALSE
+                                  AND ${raw_ivr_outcome} = 'pressed_1' THEN ${contact_id}
+                             WHEN ${initiation_method} = 'INBOUND'
+                                  AND ${out_of_hours}=FALSE
+                                  AND ${rejected_queued} = FALSE
+                                  AND ${is_handled} = FALSE
+                                  AND ${requested_callback} IS NULL THEN ${contact_id}
+                        ELSE NULL END) ;;
+        }#ali needs to ask patrick and jordan if this is right
+
+        measure: calls_queued_abandoned {
+          type: number
+          description: "how many times the customer was put in queue in the inbound environment, didn't request a callback, and then abandoned before reaching an advocate"
+          sql: COUNT(DISTINCT CASE WHEN ${initiation_method} = 'API'
+                                  AND ${is_handled} = FALSE
+                                  AND ${is_queued} = TRUE
+                                  AND ${raw_ivr_outcome} = 'pressed_1' THEN ${contact_id}
+                             WHEN ${initiation_method} = 'INBOUND'
+                                  AND ${out_of_hours}=FALSE
+                                  AND ${rejected_queued} = FALSE
+                                  AND ${is_handled} = FALSE
+                                  AND ${is_queued} = TRUE
+                                  AND ${requested_callback} IS NULL THEN ${contact_id}
+                        ELSE NULL END) ;;
+        }
+
+        measure: calls_handled {
+          type: number
+          description: "how many calls were connected to an advocate by Amazon Connect"
+          sql:  COUNT(distinct case when ${is_handled} = true then ${contact_id} else null end) ;;
+        }
+        measure: calls_queued {
+          type: number
+          description: "how many calls that ware currently in queue"
+          sql:  COUNT(distinct case when ${is_queued} = true then ${contact_id} else null end) ;;
+        }
+
+        measure: calls_routed{
+          type: number
+          sql: ${calls_offered}-${calls_abandoned} ;;
+        }
+
+        measure: calls_handled_in_realtime { #inbound_handled
+          type: number
+          sql:  COUNT(DISTINCT CASE WHEN ${initiation_method} = 'INBOUND'
+                                   AND ${is_handled} = TRUE
+                                   AND ${call_end_time_date} >= '2021-02-22' THEN ${contact_id}
+                              ELSE NULL END)  ;;
+        }
+
+        #measure: outbound_handled {
+        #type: number
+        #sql: COUNT(distinct case when ${call_outcome} in ('Connected') AND ${call_end_time_date} < '2021-02-22' then ${contact_id} else null end) ;;
+        #}
+
+        measure: callbacks_handled {
+          type: number
+          description: "automated callbacks initiated by the system from a callback requested that were handled"
+          sql:  COUNT(DISTINCT CASE WHEN ${initiation_method} = 'CALLBACK'
+                                   AND ${is_handled} = TRUE THEN ${contact_id}
+                              ELSE NULL END)  ;;
+        }
+
+        measure: callbacks_requested {
+          type: number
+          description: "Number of Inbound Calls where the customer requested a callback. Used to calculate Average Speed to Callback."
+          sql: COUNT(DISTINCT CASE WHEN ${initiation_method} = 'INBOUND'
+                              AND ${speed_to_callback} IS NOT NULL THEN ${contact_id}
+                            ELSE NULL END);;
+        }
+
+        #measure: calls_handled_without_pickup{
+        #type: number
+        #sql: COUNT(distinct case when ${call_outcome} ='NoPickup' then ${contact_id} else null end) ;;
+        #}
+
+        measure: inbound_hoops {
+          label: "Inbound Calls HOOPS"
+          type: number
+          description: "Number of inbound calls occuring during hours of operations"
+          sql: COUNT(DISTINCT(CASE WHEN ${initiation_method}='INBOUND'
+                                AND ${out_of_hours}=FALSE
+                                THEN ${contact_id}
+                             WHEN ${initiation_method}='INBOUND'
+                                AND ${out_of_hours}=TRUE
+                                AND ${is_handled} = TRUE
+                                THEN ${contact_id}
+                             WHEN ${initiation_method}= 'INBOUND'
+                                AND ${out_of_hours}=TRUE
+                                AND ${requested_callback}=TRUE
+                                THEN ${contact_id}
+                                ELSE NULL END));;
+        }
+
+        #measure: short_abandons_all_IVR {
+        #  type: number
+        #  description: "Inbound calls where customer hung up in IVR Process"
+        #  sql: COUNT(DISTINCT(CASE WHEN ${is_abandoned}=TRUE
+        #                            AND ${is_queued}=FALSE
+        #                            AND ${speed_to_callback} IS NULL
+        #                            THEN ${contact_id}
+        #                            ELSE NULL END));;
+        #}
+
+        measure: short_abandons {
+          type: number
+          description: "Inbound calls where customer hung up in IVR Process"
+          sql: COUNT(DISTINCT(CASE WHEN ${is_abandoned}=TRUE
+                              AND ${is_queued}=FALSE
+                              AND ${speed_to_callback} IS NULL
+                              AND DATEDIFF(SECOND,${call_start_time_raw},${call_end_time_raw})<=10
+                              THEN ${contact_id}
+                              ELSE NULL END));;
+        }
+
+        #measure: short_abandons_20_seconds {
+        #  type: number
+        #  description: "Inbound calls where customer hung up in IVR Process"
+        #  sql: COUNT(DISTINCT(CASE WHEN ${is_abandoned}=TRUE
+        #                            AND ${is_queued}=FALSE
+        #                            AND ${speed_to_callback} IS NULL
+        #                            AND DATEDIFF(SECOND,${call_start_time_raw},${call_end_time_raw})<=20
+        #                            THEN ${contact_id}
+        #                            ELSE NULL END));;
+        #}
+
+        measure: in_service_level {
+          type: number
+          description: "Total Number of Inbound Calls where either it was handled inbound within 120 seconds or speed to callback was less than 30 minutes"
+          sql: COUNT(distinct
+                  CASE
+                    WHEN ${initiation_method} in ('API', 'INBOUND')
+                  AND ${wait_time} < 120 AND ${agent_user_name} IS NOT NULL
+                  THEN ${contact_id}
+                    WHEN ${initiation_method} in ('INBOUND')
+                  AND ${speed_to_callback} < 1800
+                  THEN ${contact_id}
+                  ELSE NULL
+                  END) ;;
+    #sql: COUNT(distinct CASE WHEN ${wait_time} < 120 AND ${agent_user_name} IS NOT NULL THEN ${contact_id} ELSE NULL END) ;;
+          }
+
+          measure: service_level_percent{
+            type: number
+            description: "% of Inbound calls handled within SLA"
+            sql: ${in_service_level}/nullif(${total_calls_service_level},0);;
+            value_format: "0.00%"
+          }
+
+          measure: total_calls_service_level {
+            type: number
+            description: "The Total Number of Inbound Calls that SLA applies to (excludes short abandons)"
+            sql: ${inbound_hoops}-${short_abandons} ;;
+          }
+
+          measure: out_of_service_level {
+            type: number
+            description: "Total Total Number of Inbound Calls that SLA applies to but missed SLA (excludes short abandons)"
+            sql: ${total_calls_service_level}-${in_service_level} ;;
+          }
+
+          #measure: service_level_percent_all_non_IVR {
+          #  type: number
+          #  description: "service level testing removing calls didn't complete IVR"
+          #  sql: ${in_service_level}/nullif((${inbound_hoops}-${short_abandons}),0);;
+          #  value_format: "0.00%"
+          #}
+
+          #measure: service_level_percent_testing_10_seconds{
+          #  type: number
+          #  description: "service level testing removing short abandons"
+          #  sql: ${in_service_level}/nullif((${inbound_hoops_testing}-${short_abandons_10_seconds}),0);;
+          #  value_format: "0.00%"
+          #}
+
+          #measure: service_level_percent_testing_20_seconds{
+          #  type: number
+          #  description: "service level testing removing short abandons"
+          #  sql: ${in_service_level}/nullif((${inbound_hoops}-${short_abandons_20_seconds}),0);;
+          #  value_format: "0.00%"
+          #}
+
+          measure:  total_handle_time{
+            label: "Handle time in secs"
+            type: sum
+            sql:  case when ${is_handled} = true AND ${handle_time} IS NOT NULL then ${handle_time} else null end;;
+            #sql: ${handle_time};;
+          }
+          measure:  total_handle_time_hours{
+            label: "Handle time in hours"
+            type: sum
+            sql:  ${handle_time}/86400;;
+            #sql: ${handle_time};;
+            value_format: "[h]\h m\m s\s"
+          }
+
+          measure: avg_handle_time{
+            type: number
+            label: "Average Handle Time in hours"
+            description: "the avg handle time of contacts"
+            sql: ${total_handle_time}/86400/nullif(${calls_handled}, 0);;
+            value_format: "[h]\h m\m s\s"
+          }
+
+          measure: avg_raw_handle_time_seconds{
+            type: number
+            label: "Average Handle Time in seconds (Raw)"
+            description: "the avg handle time of contacts, without format"
+            sql: ${total_handle_time}/nullif(${calls_handled}, 0);;
+          }
+
+          measure: median_handle_time{
+            label: "Median Handle Time"
+            description: "the median handle time of contacts in hours"
+            type: median
+            sql: ${handle_time}/86400;;
+            value_format: "[h]\h m\m s\s"
+          }
+
+          measure: total_talk_time {
+            label: "Talk time in seconds"
+            description: "the average talk time of contacts in seconds"
+            type: sum
+            sql: ${talk_time} ;;
+            #value_format: "[h]\h m\m s\s"
+          }
+          measure: total_talk_time_hours {
+            label: "Total Talk time in hours"
+            description: "the total talk time of contacts in hours"
+            type: sum
+            sql: ${talk_time}/86400;;
+            value_format: "[h]\h m\m s\s"
+          }
+          measure: average_talk_time_hours {
+            label: "Average Talk time in hours"
+            description: "the average talk time of contacts in hours"
+            type: average
+            sql: ${talk_time}/86400 ;;
+            value_format: "[h]\h m\m s\s"
+          }
+          measure: total_wrap_time {
+            label: "Wrap time in seconds"
+            description: "the total wrap time of contacts in seconds"
+            type: sum
+            sql: ${wrap_time} ;;
+            #value_format: "[h]\h m\m s\s"
+          }
+          measure: total_wrap_time_hours {
+            label: "Wrap time in hours"
+            description: "the total wrap time of contacts in hours"
+            type: sum
+            sql: ${wrap_time}/86400 ;;
+            value_format: "[h]\h m\m s\s"
+          }
+          measure: average_wrap_time_hours {
+            label: "Avg Wrap Time (ACW)"
+            description: "the average wrap time of contacts in hours"
+            type: average
+            sql: ${wrap_time}/86400 ;;
+            value_format: "[h]\h m\m s\s"
+          }
+
+          measure: average_raw_wrap_time_hours {
+            label: "Avg Wrap Time (Raw ACW) in hours"
+            description: "the average wrap time of contacts in hours, without format"
+            type: average
+            sql: ${wrap_time}/86400 ;;
+          }
+
+          measure: average_raw_wrap_time_minutes {
+            label: "Avg Wrap Time (Raw ACW) in minutes"
+            description: "the average wrap time of contacts in minutes, without format"
+            type: average
+            sql: ${wrap_time}/60 ;;
+          }
+
+          measure: total_wait_time {
+            label: "Wait time in seconds"
+            description: "the total wait time of contacts in seconds"
+            type: sum
+            sql: ${wait_time} ;;
+            #value_format: "[h]\h m\m s\s"
+          }
+          measure: speed_to_answer_wait_time{
+            label: "Wait Time (Calls Handled In Realtime)"
+            #hidden: yes
+            description: "the total wait time of contacts in seconds for calls handled in realtime"
+            type: sum
+            sql: case when ${is_handled} = true AND ${initiation_method} = 'INBOUND' then ${wait_time} else null end;;
+            #value_format: "[h]\h m\m s\s"
+          }
+          measure: avg_wait_calls_in_realtime {
+            label: "Avg Wait Time (Calls Handled In Realtime)"
+            description: "the avg wait time of contacts in seconds for calls handled in realtime"
+            type: number
+            sql:  ${speed_to_answer_wait_time}/86400/nullif(${calls_handled_in_realtime},0) ;;
+            value_format: "[h]\h m\m s\s"
+          }
+
+          measure: avg_speed_to_answer {
+            label: "Average Speed To Answer in hours"
+            description: "the total wait time of contacts in hours"
+            type: number
+            sql: (${speed_to_answer_wait_time}+${total_speed_to_callback})/86400/nullif((${callbacks} + ${calls_handled_in_realtime}),0);;
+            value_format: "[h]\h m\m s\s"
+          }
+          measure: total_wait_time_hours {
+            label: "Wait time in hours"
+            description: "the total wait time of contacts in hours"
+            type: sum
+            sql: ${wait_time}/86400 ;;
+            value_format: "[h]\h m\m s\s"
+          }
+          measure: average_wait_time_hours {
+            label: "Average Wait time in hours"
+            description: "the average wait time of contacts in hours"
+            type: average
+            sql: ${wait_time}/86400 ;;
+            value_format: "[h]\h m\m s\s"
+          }
+          measure: total_hold_time {
+            label: "Hold time in seconds"
+            description: "the total hold time of contacts in seconds"
+            type: sum
+            sql: ${hold_time};;
+            #value_format: "[h]\h m\m s\s"
+          }
+          measure: total_hold_time_hours {
+            label: "Hold time in hours"
+            description: "the total hold time of contacts in hours"
+            type: sum
+            sql: ${hold_time}/86400;;
+            value_format: "[h]\h m\m s\s"
+          }
+          measure: average_hold_time_hours {
+            label: "Average Hold time in hours"
+            description: "the average total hold time of contacts in hours"
+            type: average
+            sql: ${hold_time}/86400;;
+            value_format: "[h]\h m\m s\s"
+          }
+          measure: average_hold_time_hours_raw {
+            label: "Average Hold time in hours (raw)"
+            description: "the average total hold time of contacts in hours, withour format"
+            type: average
+            sql: ${hold_time}/86400;;
+          }
+          measure: total_speed_to_callback {
+            type: sum
+            description: "the total speed to callback of contacts in seconds"
+            sql: ${speed_to_callback} ;;
+            #value_format: "[h]\h m\m s\s"
+          }
+          measure: avg_speed_to_callback {
+            label: "Avg Speed To Callback"
+            description: "the average speed to callback of contacts in hours"
+            type: average
+            sql: ${speed_to_callback}/86400  ;;
+            value_format: "[h]\h m\m s\s"
+          }
+          measure: median_speed_to_callback {
+            label: "Median Speed To Callback"
+            description: "the median speed to callback of contacts in hours"
+            type: median
+            sql: ${speed_to_callback}/86400  ;;
+            value_format: "[h]\h m\m s\s"
+          }
+          measure: total_speed_to_answer {
+            label: "total speed to answer"
+            description: "Duration between when the customer dials and an advocate answers (just for successful inbound calls)"
+            type: number
+            sql: ${speed_to_callback} + ${total_speed_to_answer_wait_time } ;;
+          }
+          measure: unique_callers_abandoned {
+            label: "Unique Callers Abandoned"
+            description: "unique callers who had abandoned their call"
+            type: number
+            sql:  COUNT(distinct case when ${is_abandoned} = true then ${customer_endpoint} else null end) ;;
+          }
+          measure: case_count{
+            type: count_distinct
+            description: "the total amount of case count"
+            sql: ${TABLE}."CASE_ID" ;;
+          }
+          # metrics added for Voice Authentication Process starting on 10/18
+          # kakoto
+          measure: total_pii_restart_count {
+            label: "Total PII Workflow Restarts"
+            type: sum
+            sql: ${TABLE}.VOICE_PII_RESTART_COUNT ;;
+          }
+          measure: total_full_name_match{
+            type: sum
+            sql: ${TABLE}.FULL_NAME_MATCH_COUNT ;;
+          }
+          measure: total_full_name_mismatch{
+            type: sum
+            sql: ${TABLE}.FULL_NAME_MISMATCH_COUNT ;;
+          }
+          measure: full_name_mismatch_percentage {
+            type: number
+            sql: ${total_full_name_mismatch}/${total_voice_pii_calls} ;;
+          }
+          measure: total_phone_number_match {
+            type: sum
+            sql: ${TABLE}.PHONE_NUMBER_MATCH_COUNT ;;
+          }
+          measure: total_phone_number_mismatch {
+            type: sum
+            sql: ${TABLE}.PHONE_NUMBER_MISMATCH_COUNT ;;
+          }
+          measure: phone_number_mismatch_percentage {
+            type: number
+            sql: ${total_phone_number_mismatch}/${total_voice_pii_calls} ;;
+          }
+          measure: total_email_match_count{
+            type: sum
+            sql: ${TABLE}.EMAIL_MATCH_COUNT ;;
+          }
+          measure: total_email_mismatch_count{
+            type: sum
+            sql: ${TABLE}.EMAIL_MISMATCH_COUNT ;;
+          }
+          measure: email_mismatch_count_percentage {
+            type: number
+            sql: ${total_email_mismatch_count}/${total_voice_pii_calls} ;;
+          }
+          measure: total_postal_code_match_count{
+            type: sum
+            sql: ${TABLE}.POSTAL_CODE_MATCH_COUNT ;;
+          }
+          measure: total_postal_code_mismatch_count{
+            type: sum
+            sql: ${TABLE}.POSTAL_CODE_MISMATCH_COUNT ;;
+          }
+          measure: postal_code_mismatch_count_percentage {
+            type: number
+            sql: ${total_postal_code_mismatch_count}/${total_voice_pii_calls} ;;
+          }
+          measure: total_bank_match_count {
+            type: sum
+            sql: ${TABLE}.BANK_MATCH_COUNT ;;
+          }
+          measure: total_bank_mismatch_count {
+            type: sum
+            sql: ${TABLE}.BANK_MISMATCH_COUNT ;;
+          }
+          measure: bank_mismatch_count_percentage {
+            type: number
+            sql: ${total_bank_mismatch_count}/${total_voice_pii_calls} ;;
+          }
+          measure: total_cash_card_match_count {
+            type: sum
+            sql: ${TABLE}.CASH_CARD_MATCH_COUNT ;;
+          }
+          measure: total_cash_card_mismatch_count {
+            type: sum
+            sql: ${TABLE}.CASH_CARD_MISMATCH_COUNT ;;
+          }
+          measure: cash_card_mismatch_count_percentage {
+            type: number
+            sql: ${total_cash_card_mismatch_count}/${total_voice_pii_calls} ;;
+          }
+          measure: total_debit_match_count{
+            type: sum
+            sql: ${TABLE}.DEBIT_CARD_MATCH_COUNT ;;
+          }
+          measure: total_debit_mismatch_count{
+            type: sum
+            sql: ${TABLE}.DEBIT_CARD_MISMATCH_COUNT ;;
+          }
+          measure: debit_mismatch_count_percentage {
+            type: number
+            sql: ${total_debit_mismatch_count}/${total_voice_pii_calls} ;;
+          }
+          measure: total_payments_match_count{
+            type: sum
+            sql: ${TABLE}.PAYMENTS_MATCH_COUNT ;;
+          }
+          measure: total_payments_mismatch_count{
+            type: sum
+            sql: ${TABLE}.PAYMENTS_MISMATCH_COUNT ;;
+          }
+          measure: payments_mismatch_count_percentage {
+            type: number
+            sql: ${total_payments_mismatch_count}/${total_voice_pii_calls} ;;
+          }
+          measure: passed_calls {
+            type: number
+            sql:  COUNT(distinct case when ${is_pii_passed} = true then ${contact_id} else null end) ;;
+          }
+          measure: failed_calls {
+            type: number
+            sql:  COUNT(distinct case when ${is_pii_passed} = false then ${contact_id} else null end) ;;
+          }
+          measure:total_voice_pii_calls {
+            type: number
+            sql:  COUNT(distinct case when ${is_pii_passed} is not null then ${contact_id} else null end) ;;
+          }
+          measure: voice_pii_pass_percentage{
+            label: "Voice PII Workflow Pass Percentage"
+            type: number
+            sql: ${passed_calls}/ nullif(${total_voice_pii_calls},0)  ;;
+            value_format: "0.00%"
+          }
+          measure: count_amazon_connect_contact_id {
+            label: "Count of Amazon Connect Contact IDs"
+            type: count_distinct
+            sql: ${contact_id} ;;
+            drill_fields: [call_details*]
+          }
+
+          set: call_details {
+            fields: [contact_id, initiation_method, agent_user_name, call_date, handle_time, talk_time, hold_time, wrap_time]
+          }
+
+          measure: inbound_rejected_requested_callback {
+            label: "Inbound, Rejected Requested Callback"
+            type: number
+            sql: count(distinct
+                   CASE
+                   WHEN ${initiation_method} = 'INBOUND'
+                   AND ${requested_callback} = TRUE
+                   THEN ${contact_id}
+                   else null end) ;;
+          }
+
+          measure: inbound_rejected_already_queued {
+            label: "Inbound, Rejected Already Queued"
+            type: number
+            sql: count(distinct
+                   CASE
+                   WHEN ${initiation_method} = 'INBOUND'
+                   AND ${rejected_queued} = TRUE
+                   THEN ${contact_id}
+                   else null end) ;;
+          }
+
+          measure: voicemail_calls {
+            type:  number
+            description: "Number of Calls that end in a Voicemail"
+            sql: COUNT(distinct case when ${is_voicemail} = true then ${contact_id}
+              when ${rejected_voicemail} = true then ${contact_id} else null end);;
+          }
+
+          measure: average_inbound_call_difference_seconds {
+            type: average
+            sql: ${inbound_call_difference_seconds}/86400;;
+            value_format: "[h]\h m\m s\s"
+          }
+
+          measure: abandon_rate {
+            type: number
+            sql: (${calls_abandoned}-${short_abandons})/nullif((${inbound_hoops}-${short_abandons}),0);;
+            value_format: "0.00%"
+          }
+
+          measure: hold_time_percentage {
+            description: "How much of the overall call was spent in Hold Time"
+            type: number
+            sql: ${hold_time}/nullif(${handle_time},0) ;;
+          }
+
+          #measure: abandon_rate_non_IVR {
+          #  type: number
+          # sql: (${calls_abandoned}-${short_abandons})/nullif((${inbound_hoops}-${short_abandons}),0) ;;
+          #  value_format: "0.00%"
+          #}
+
+          #measure: abandon_rate_testing_10_seconds {
+          #  type: number
+          #  sql: (${calls_abandoned}-${short_abandons_10_seconds})/nullif((${inbound_hoops}-${short_abandons_10_seconds}),0) ;;
+          #  value_format: "0.00%"
+          #}
+
+          #measure: abandon_rate_testing_20_seconds {
+          #  type: number
+          #  sql: (${calls_abandoned}-${short_abandons_20_seconds})/nullif((${inbound_hoops}-${short_abandons_20_seconds}),0) ;;
+          #  value_format: "0.00%"
+          #}
+        }
