@@ -44,7 +44,7 @@ WITH
     QUALIFY
       ROW_NUMBER() OVER (PARTITION BY b1.case_id ORDER BY ABS(days_since_most_recent_case)) = 1
   )
-  -- , fcr_calculation AS (
+  , fcr_calculation AS (
     SELECT
       1 = 1
       , rc.days_since_most_recent_case
@@ -64,7 +64,7 @@ WITH
       ON b.case_id = rc.case_id
     WHERE
       1 = 1
-    ORDER BY b.case_id;
+    ORDER BY b.case_id
   )
 
 SELECT
