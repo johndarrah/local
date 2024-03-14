@@ -37,6 +37,6 @@ LEFT JOIN non_outbound nb
   ON o.customer_endpoint = nb.customer_endpoint
 WHERE
   1 = 1
-  AND nb.customer_endpoint IS NOT NULL
+  -- AND nb.customer_endpoint IS NOT NULL
 GROUP BY 1
 ORDER BY 1 DESC
