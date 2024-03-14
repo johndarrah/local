@@ -1,3 +1,5 @@
+-- current: 1,028,084
+-- 6,459,889
 WITH
   base AS (
     SELECT DISTINCT
@@ -11,7 +13,8 @@ WITH
       ON cr.case_id = sc.case_id
     WHERE
       1 = 1
-      AND YEAR(case_creation_ts_utc) = 2024
+      -- AND YEAR(sc.case_creation_date_time) = 2024
+      and year(case_creation_ts_utc)=2024
       AND sc.customer_token IS NOT NULL
     -- AND sc.customer_token = 'C_002210y39'
   )
@@ -96,25 +99,22 @@ ORDER BY b.customer_token
 )
 
 SELECT
-  -- 1 = 1
-    is_fcr_7_day
-,count(*)
-  -- , ROUND(AVG(ABS(days_since_any_issue_contact)))                                     AS avg_abs_days_since_any_issue_contact
-  -- , MEDIAN(IFF(has_any_issue_contact, ABS(days_since_any_issue_contact), NULL))       AS median_abs_days_since_any_issue_contact
-  --
-  -- , ROUND(AVG(ABS(days_since_new_issue_contact)))                                     AS avg_abs_days_since_new_issue_contact
-  -- , ROUND(AVG(ABS(days_since_repeat_issue_contact)))                                  AS avg_abs_days_since_repeat_issue_contact
-  -- , MEDIAN(IFF(has_repeat_issue_contact, ABS(days_since_repeat_issue_contact), NULL)) AS median_abs_days_since_repeat_issue_contact
-  -- , ROUND(COUNT(DISTINCT IFF(has_new_issue_contact, customer_token, NULL)) /
-  --           COUNT(DISTINCT customer_token) * 100, 2)                                  AS percent_of_new_issue_customers
-  -- , ROUND(COUNT(DISTINCT IFF(has_repeat_issue_contact, customer_token, NULL)) /
-  --           COUNT(DISTINCT customer_token) * 100, 2)                                  AS percent_of_repeat_issue_customers
-  -- , ROUND(COUNT_IF(is_fcr_7_day) / NULLIFZERO(COUNT(DISTINCT case_id)) * 100, 2)      AS total_fcr_7_day
-  -- , ROUND(COUNT_IF(is_fcr_14_day) / NULLIFZERO(COUNT(DISTINCT case_id)) * 100, 2)     AS total_fcr_14_day
-  -- , ROUND(COUNT_IF(is_fcr_28_day) / NULLIFZERO(COUNT(DISTINCT case_id)) * 100, 2)     AS total_fcr_28_day
+  1 = 1
+     ,count_if(is_fcr_7_day) as test
+  , ROUND(AVG(ABS(days_since_any_issue_contact)))                                     AS avg_abs_days_since_any_issue_contact
+  , MEDIAN(IFF(has_any_issue_contact, ABS(days_since_any_issue_contact), NULL))       AS median_abs_days_since_any_issue_contact
+
+  , ROUND(AVG(ABS(days_since_new_issue_contact)))                                     AS avg_abs_days_since_new_issue_contact
+  , ROUND(AVG(ABS(days_since_repeat_issue_contact)))                                  AS avg_abs_days_since_repeat_issue_contact
+  , MEDIAN(IFF(has_repeat_issue_contact, ABS(days_since_repeat_issue_contact), NULL)) AS median_abs_days_since_repeat_issue_contact
+  , ROUND(COUNT(DISTINCT IFF(has_new_issue_contact, customer_token, NULL)) /
+            COUNT(DISTINCT customer_token) * 100, 2)                                  AS percent_of_new_issue_customers
+  , ROUND(COUNT(DISTINCT IFF(has_repeat_issue_contact, customer_token, NULL)) /
+            COUNT(DISTINCT customer_token) * 100, 2)                                  AS percent_of_repeat_issue_customers
+  , ROUND(COUNT_IF(is_fcr_7_day) / NULLIFZERO(COUNT(DISTINCT case_id)) * 100, 2)      AS total_fcr_7_day
+  , ROUND(COUNT_IF(is_fcr_14_day) / NULLIFZERO(COUNT(DISTINCT case_id)) * 100, 2)     AS total_fcr_14_day
+  , ROUND(COUNT_IF(is_fcr_28_day) / NULLIFZERO(COUNT(DISTINCT case_id)) * 100, 2)     AS total_fcr_28_day
 FROM fcr_calculation
 WHERE
   1 = 1
-and year(case_creation_ts_utc)=2024
-GROUP BY 1
 ;
