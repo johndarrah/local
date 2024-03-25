@@ -27,8 +27,8 @@ WITH
   )
 
 SELECT
-  -- DATE_TRUNC(YEAR, o.ds)                                                              AS year
-o.customer_endpoint
+  DATE_TRUNC(YEAR, o.ds)                                                              AS year
+-- o.customer_endpoint
   , COUNT(DISTINCT IFF(nb.customer_endpoint IS NOT NULL, nb.customer_endpoint, NULL)) AS total_outbound_with_incoming
   , COUNT(DISTINCT o.customer_endpoint)                                               AS total_outbound
   , total_outbound - total_outbound_with_incoming                                     AS delta
@@ -40,6 +40,6 @@ LEFT JOIN non_outbound nb
 WHERE
   1 = 1
   -- AND nvl(DATEDIFF(DAY, nb.ds, o.ds),0) <= 7 -- the outbound must occur withing 7 days
-AND nb.customer_endpoint IS  NULL
+-- AND nb.customer_endpoint IS  NULL
 GROUP BY 1
 ORDER BY 1 DESC
