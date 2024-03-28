@@ -1,5 +1,5 @@
 WITH
-  base AS (
+  complaints_base AS (
     SELECT
       c.workflow
       , c.id
@@ -17,14 +17,12 @@ WITH
       , COALESCE(owner.employee_id::VARCHAR, tqc.queue_id)      AS owner_id              -- CF1 COMPLAINT RECORD CAN BE OWNED BY EMPLOYEE OR QUEUE; IF EMPLOYEE_ID IS NULL, COALESCE GRABS THE QUEUE OWNER_ID; CAST NECESSARY SINCE EMPLOYEE_ID IS NUMBER TYPE
       , COALESCE(owner.full_name, tqc.queue_name)               AS owner_name            -- CF1 COMPLAINT RECORD CAN BE OWNED BY EMPLOYEE OR QUEUE; IF FULL_NAME IS NULL, COALESCE GRABS THE QUEUE NAME
       , owner.ldap_today                                        AS owner_ldap
-      , datetime_owned::TIMESTAMP_NTZ                           AS owned_ts_utc
       , c.primary_complaint
       , c.escalated_to_legal
       , c.escalated_to_legal_date_utc::TIMESTAMP_NTZ            AS escalated_to_legal_ts_utc
       , c.root_cause_notes
       , c.substantiated
-      , crh.resolved_by_name
-      , crh.resolved_by_ldap
+
       , COALESCE(modifier.employee_id::VARCHAR, ulm.id)         AS last_modified_by_id   -- CF1 COMPLAINT RECORD CAN BE MODIFIED BY EMPLOYEE OR SUPPORTAL BOT (ONLY OTHER KNOWN VALUE); IF EMPLOYEE_ID IS NULL, COALESCE GRABS THE ID FROM USERS TABLE; CAST NECESSARY SINCE EMPLOYEE_ID IS NUMBER TYPE
       , COALESCE(modifier.full_name, ulm.name)                  AS last_modified_by_name -- CF1 COMPLAINT RECORD CAN BE MODIFIED BY EMPLOYEE OR SUPPORTAL BOT (ONLY OTHER KNOWN VALUE); IF EMPLOYEE_ID IS NULL, COALESCE GRABS THE NAME FROM USERS TABLE
       , c.last_modified_date_utc::TIMESTAMP_NTZ                 AS last_modified_ts_utc
@@ -37,7 +35,7 @@ WITH
       , c.intake_channel
       , c.pii_verified
       , c.complaint_status
-      , COALESCE(c.customer_token, 'Unknown')                   AS customer_token
+      , c.customer_token
       , c.date_complaint_acknowledged_utc::TIMESTAMP_NTZ        AS acknowledged_ts_utc
       , c.date_complaint_closed_utc::TIMESTAMP_NTZ              AS closed_ts_utc
       , c.date_complaint_investigated_utc::TIMESTAMP_NTZ        AS investigated_ts_utc
@@ -75,9 +73,6 @@ WITH
       , c.date_response_sent_utc::TIMESTAMP_NTZ                 AS external_response_sent_ts_utc
       , c.date_response_due::TIMESTAMP_NTZ                      AS response_due_ts_utc
     FROM cash_complaints.xanadu_testing.clean_complaints c
-      ---------------------------------------- TABLE JOINS ----------------------------------------
-      -- LEFT JOIN app_datamart_cco.sfdc_cfone.clean_record_type rt
-      --   ON c.record_type_id = rt.id -- FOR RECORD TYPE NAME, NECESSARY TO IDENTIFY TYPE OF COMPLAINT (CASH APP, INVESTING, BORROW)
     LEFT JOIN app_datamart_cco.workday.cs_employees_and_agents modifier
       ON c.last_modified_by_id = modifier.cfone_id_today
       AND c.date_flagged_utc::DATE BETWEEN modifier.start_date AND modifier.end_date -- FOR CF1 LAST MODIFIED DATE WHEN IT IS EMPLOYEE; COMPLAINT RECORD CAN BE MODIFIED BY EMPLOYEE OR SUPPORTAL BOT (ONLY OTHER KNOWN VALUE)
@@ -91,32 +86,17 @@ WITH
       ON c.last_modified_by_id = ulm.id -- FOR CF1 LAST MODIFIED DATE WHEN IT IS SUPPORTAL BOT OR ANYTHING OTHER THAN EMPLOYEE
     LEFT JOIN app_datamart_cco.public.team_queue_catalog tqc
       ON c.owner_id = tqc.queue_id -- FOR CF1 COMPLAINT RECORD OWNER NAME WHEN IT IS QUEUE; COMPLAINT RECORD CAN BE OWNED BY EMPLOYEE OR A QUEUE
-      ---------------------------------------- CTE JOINS ----------------------------------------
-    LEFT JOIN cash_complaints.xanadu_testing.resolved_complaint_record_history crh
-      ON c.id = crh.parent_id
-    LEFT JOIN cash_complaints.xanadu_testing.owner_history oh
-      ON c.id = oh.parent_id
-      AND owner.full_name = oh.owner_name_history
-    ---------------------------------------- Filters ----------------------------------------
     WHERE
       1 = 1
       AND c.complaint_status IS NOT NULL -- will always be non NULL for post-xanadu records
   )
   , responded_bbb_history AS ( --datetime when a date was filled out for the date_responded_in_bbb field, for productivity purposes
     SELECT
-      a.parent_id
-      , a.field
-      , a.new_value                     AS bbb_responded_ts_utc
-      , a.created_at_utc::TIMESTAMP_NTZ AS bbb_input_responded_ts_utc
-    -- , adjusted_employee_id               AS responded_in_bbb_by_id
-    -- , name                               AS responded_in_bbb_by_name
-    -- , ldap_today                         AS responded_in_bbb_by_ldap
-    FROM cash_complaints.sfdc_cfone.clean_complaint_history a
-    LEFT JOIN app_datamart_cco.sfdc_cfone.clean_user b
-      ON a.created_by_id = b.id
-    LEFT JOIN app_datamart_cco.workday.cs_employees_and_agents c
-      ON a.created_by_id = c.cfone_id_today
-      AND a.created_at_utc::DATE BETWEEN c.start_date AND c.end_date
+      parent_id
+      , field
+      , new_value                     AS bbb_responded_ts_utc
+      , created_at_utc::TIMESTAMP_NTZ AS bbb_input_responded_ts_utc
+    FROM cash_complaints.sfdc_cfone.clean_complaint_history
     WHERE
       field = 'Date_Responded_in_BBB__c'
     QUALIFY
@@ -125,18 +105,10 @@ WITH
   , sponsoring_bank AS (
     SELECT DISTINCT
       customer_token
-      , MAX(created_at) AS date_new
+      , sponsoring_bank
     FROM app_cash.app.banklin_cash_card_issuance
-    GROUP BY customer_token
-  )
-  , sponsoring_bank_join AS (
-    SELECT DISTINCT
-      a.customer_token
-      , b.sponsoring_bank
-    FROM sponsoring_bank a
-    LEFT JOIN app_cash.app.banklin_cash_card_issuance b
-      ON a.customer_token = b.customer_token
-      AND a.date_new = b.created_at
+    QUALIFY
+      ROW_NUMBER() OVER (PARTITION BY customer_token ORDER BY created_at DESC) = 1
   )
 
 SELECT
@@ -145,6 +117,7 @@ SELECT
   , b.case_id
   , b.cased_ts_utc
   , b.workflow
+  , IFF(b.workflow IN ('Regulatory', 'Pre-Litigation', 'BBB'), TRUE, FALSE)            AS is_external_complaint
   , CASE
       WHEN b.workflow = 'Internal'
         THEN NULL
@@ -190,7 +163,7 @@ SELECT
       WHEN b.workflow = 'BBB'
         THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.response_due_ts_utc)
       ELSE NULL
-    END                                                                                AS formal_response_sla
+    END                                                                                AS formal_response_sla_threshold
   , CASE
       WHEN b.workflow = 'Internal'
         THEN 6
@@ -201,7 +174,7 @@ SELECT
       WHEN b.workflow = 'BBB'
         THEN NULL
       ELSE NULL
-    END                                                                                AS acknowledgement_sla
+    END                                                                                AS acknowledgement_sla_threshold
   , CASE
       WHEN b.workflow = 'Internal'
         THEN 5
@@ -212,7 +185,7 @@ SELECT
       WHEN b.workflow = 'BBB'
         THEN NULL
       ELSE NULL
-    END                                                                                AS early_resolution_sla
+    END                                                                                AS early_resolution_sla_threshold
   , CASE
       WHEN b.workflow = 'Internal'
         THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.acknowledged_ts_utc)
@@ -237,18 +210,18 @@ SELECT
     END                                                                                AS time_to_closure_business_days
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN COALESCE(time_to_closure_business_days > formal_response_sla, FALSE)
+        THEN time_to_closure_business_days <= formal_response_sla_threshold
       WHEN b.workflow = 'Regulatory'
-        THEN COALESCE(time_to_closure_business_days > formal_response_sla, FALSE)
+        THEN time_to_closure_business_days <= formal_response_sla_threshold
       WHEN b.workflow = 'Pre-Litigation'
-        THEN COALESCE(time_to_closure_business_days > formal_response_sla, FALSE)
+        THEN time_to_closure_business_days <= formal_response_sla_threshold
       WHEN b.workflow = 'BBB'
-        THEN COALESCE(time_to_closure_business_days > formal_response_sla, FALSE)
-      ELSE NULL
-    END                                                                                AS formal_response_sla_exception
+        THEN time_to_closure_business_days <= formal_response_sla_threshold
+      ELSE FALSE
+    END                                                                                AS is_compliant_informal_response_sla
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN COALESCE(time_to_acknowledge_business_days > acknowledgement_sla, FALSE)
+        THEN COALESCE(time_to_acknowledge_business_days <= acknowledgement_sla_threshold, FALSE)
       WHEN b.workflow = 'Regulatory'
         THEN NULL
       WHEN b.workflow = 'Pre-Litigation'
@@ -256,10 +229,10 @@ SELECT
       WHEN b.workflow = 'BBB'
         THEN NULL
       ELSE NULL
-    END                                                                                AS acknowledgement_sla_exception
+    END                                                                                AS is_compliant_in_acknowledgement_sla
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN COALESCE(time_to_closure_business_days > early_resolution_sla, FALSE)
+        THEN COALESCE(time_to_closure_business_days <= early_resolution_sla_threshold, FALSE)
       WHEN b.workflow = 'Regulatory'
         THEN NULL
       WHEN b.workflow = 'Pre-Litigation'
@@ -267,7 +240,7 @@ SELECT
       WHEN b.workflow = 'BBB'
         THEN NULL
       ELSE NULL
-    END                                                                                AS early_resolution_sla_exception
+    END                                                                                AS is_compliant_in_early_resolution_sla
   , CASE
       WHEN b.workflow = 'Internal'
         THEN DATEDIFF(DAY, b.created_ts_utc, b.resolved_ts_utc)
@@ -278,7 +251,7 @@ SELECT
       WHEN b.workflow = 'BBB'
         THEN DATEDIFF(DAY, b.received_ts_utc, rbh.bbb_responded_ts_utc)
       ELSE NULL
-    END                                                                                AS cert_investigation_time -- why date here?
+    END                                                                                AS cert_investigation_time
   , b.customer_state
   , b.country
   , b.escalated_to_legal
@@ -330,15 +303,15 @@ SELECT
   , b.severity_tier
   , b.is_handled_by_ccot
   , IFF(sa.dependent_customer_token IS NOT NULL, TRUE, FALSE)                          AS is_dependent_account
-  , sbj.sponsoring_bank                                                                AS third_party_provider
-FROM base b
+  , sb.sponsoring_bank                                                                 AS third_party_provider
+FROM complaints_base b
 LEFT JOIN responded_bbb_history rbh
   ON b.id = rbh.parent_id
   AND b.created_ts_utc::DATE >= '2021-01-04'
 LEFT JOIN app_cash.app.sponsored_accounts sa --FOR IDENTIFYING TEEN ACCOUNTS:IS_DEPENDENT_ACCOUNT
   ON b.customer_token = sa.dependent_customer_token
-LEFT JOIN sponsoring_bank_join sbj
-  ON b.customer_token = sbj.customer_token -- FOR “SPONSORING_BANK” TO BE USED AS THIRD PARTY PROVIDER
+LEFT JOIN sponsoring_bank sb
+  ON b.customer_token = sb.customer_token -- FOR “SPONSORING_BANK” TO BE USED AS THIRD PARTY PROVIDER
 ;
 
 DESCRIBE TABLE cash_complaints.xanadu_testing.clean_complaints
