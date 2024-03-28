@@ -68,7 +68,7 @@ WITH
       , CASE
           WHEN c.workflow IN ('Regulatory', 'Pre-Litigation', 'BBB')
             THEN TRUE
-          ELSE c.is_handled_by_ccot
+          ELSE COALESCE(c.is_handled_by_ccot, FALSE)
         END                                                     AS is_handled_by_ccot
       , c.date_early_resolution_due::TIMESTAMP_NTZ              AS early_resolution_due_ts_utc
       , c.date_formal_acknowledgement_due::TIMESTAMP_NTZ        AS formal_acknowledgement_due_ts_utc
