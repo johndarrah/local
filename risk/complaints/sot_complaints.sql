@@ -5,7 +5,7 @@ WITH
       , c.id
       , c.complaint_number
       , c.created_date_utc::TIMESTAMP_NTZ                       AS created_ts_utc
-      , c.date_complaint_closed_utc                             AS cased_ts_utc
+      , c.date_complaint_closed_utc                             AS closed_ts_utc
       , c.created_by_id
       , c.case_id
       , c.case_number
@@ -312,4 +312,6 @@ LEFT JOIN app_cash.app.sponsored_accounts sa --for identifying teen accounts:is_
   ON b.customer_token = sa.dependent_customer_token
 LEFT JOIN sponsoring_bank sb
   ON b.customer_token = sb.customer_token -- for identifying third party provider
+ORDER BY created_ts_utc DESC
+LIMIT 100
 ;
