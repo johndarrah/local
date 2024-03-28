@@ -14,7 +14,7 @@ WITH
       , COALESCE(c.business_unit, 'Cash App')                   AS business_unit
       , c.flagged_by
       , c.complaint_review_notes
-      , COALESCE(owner.employee_id::VARCHAR, tqc.queue_id)      AS owner_id              -- CF1 COMPLAINT RECORD CAN BE OWNED BY EMPLOYEE OR QUEUE; IF EMPLOYEE_ID IS NULL, COALESCE GRABS THE QUEUE OWNER_ID; CAST NECESSARY SINCE EMPLOYEE_ID IS NUMBER TYPE
+      , COALESCE(owner.employee_id::VARCHAR, tqc.queue_id)      AS owner_id              -- CF1 COMPLAINT RECORD CAN BE OWNED BY EMPLOYEE OR QUEUE; IF EMPLOYEE_ID IS NULL, COALESCE GRABS THE QUEUE OWNER_ID
       , COALESCE(owner.full_name, tqc.queue_name)               AS owner_name            -- CF1 COMPLAINT RECORD CAN BE OWNED BY EMPLOYEE OR QUEUE; IF FULL_NAME IS NULL, COALESCE GRABS THE QUEUE NAME
       , owner.ldap_today                                        AS owner_ldap
       , c.primary_complaint
@@ -90,7 +90,7 @@ WITH
       1 = 1
       AND c.complaint_status IS NOT NULL -- will always be non NULL for post-xanadu records
   )
-  , responded_bbb_history AS ( --datetime when a date was filled out for the date_responded_in_bbb field, for productivity purposes
+  , responded_bbb_history AS (
     SELECT
       parent_id
       , field
@@ -308,10 +308,8 @@ FROM complaints_base b
 LEFT JOIN responded_bbb_history rbh
   ON b.id = rbh.parent_id
   AND b.created_ts_utc::DATE >= '2021-01-04'
-LEFT JOIN app_cash.app.sponsored_accounts sa --FOR IDENTIFYING TEEN ACCOUNTS:IS_DEPENDENT_ACCOUNT
+LEFT JOIN app_cash.app.sponsored_accounts sa --for identifying teen accounts:is_dependent_account
   ON b.customer_token = sa.dependent_customer_token
 LEFT JOIN sponsoring_bank sb
-  ON b.customer_token = sb.customer_token -- FOR “SPONSORING_BANK” TO BE USED AS THIRD PARTY PROVIDER
+  ON b.customer_token = sb.customer_token -- for identifying third party provider
 ;
-
-DESCRIBE TABLE cash_complaints.xanadu_testing.clean_complaints
