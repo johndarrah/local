@@ -141,7 +141,7 @@ SELECT
   , b.created_ts_utc
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN DATEADD(DAY, 30, b.received_ts_utc)
+        THEN NULL -- this will be updated once the data is confirmed for Internal. No impact now since values are hardcoded. This will most likely be "early_resolution_due_ts_utc" or "formal_response_due_ts_utc"
       WHEN b.workflow = 'Regulatory'
         THEN b.response_due_ts_utc
       WHEN b.workflow = 'Pre-Litigation'
