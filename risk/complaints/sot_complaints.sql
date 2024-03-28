@@ -215,9 +215,7 @@ SELECT
     END                                                                                AS early_resolution_sla
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN app_cash_cs.public.business_days_between(
-        b.received_ts_utc
-        , b.acknowledged_ts_utc)
+        THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.acknowledged_ts_utc)
       WHEN b.workflow = 'Regulatory'
         THEN NULL
       WHEN b.workflow = 'Pre-Litigation'
@@ -228,37 +226,29 @@ SELECT
     END                                                                                AS time_to_acknowledge_business_days
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN app_cash_cs.public.business_days_between(
-        b.received_ts_utc
-        , b.closed_ts_utc)
+        THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.closed_ts_utc)
       WHEN b.workflow = 'Regulatory'
-        THEN NULL
+        THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.closed_ts_utc)
       WHEN b.workflow = 'Pre-Litigation'
-        THEN NULL
+        THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.closed_ts_utc)
       WHEN b.workflow = 'BBB'
-        THEN NULL
+        THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.closed_ts_utc)
       ELSE NULL
     END                                                                                AS time_to_closure_business_days
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN COALESCE(
-        time_to_closure_business_days
-          > formal_response_sla
-        , FALSE)
+        THEN COALESCE(time_to_closure_business_days > formal_response_sla, FALSE)
       WHEN b.workflow = 'Regulatory'
-        THEN NULL
+        THEN COALESCE(time_to_closure_business_days > formal_response_sla, FALSE)
       WHEN b.workflow = 'Pre-Litigation'
-        THEN NULL
+        THEN COALESCE(time_to_closure_business_days > formal_response_sla, FALSE)
       WHEN b.workflow = 'BBB'
-        THEN NULL
+        THEN COALESCE(time_to_closure_business_days > formal_response_sla, FALSE)
       ELSE NULL
     END                                                                                AS formal_response_sla_exception
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN COALESCE(
-        time_to_acknowledge_business_days
-          > acknowledgement_sla
-        , FALSE)
+        THEN COALESCE(time_to_acknowledge_business_days > acknowledgement_sla, FALSE)
       WHEN b.workflow = 'Regulatory'
         THEN NULL
       WHEN b.workflow = 'Pre-Litigation'
@@ -269,10 +259,7 @@ SELECT
     END                                                                                AS acknowledgement_sla_exception
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN COALESCE(
-        time_to_closure_business_days
-          > early_resolution_sla
-        , FALSE)
+        THEN COALESCE(time_to_closure_business_days > early_resolution_sla, FALSE)
       WHEN b.workflow = 'Regulatory'
         THEN NULL
       WHEN b.workflow = 'Pre-Litigation'
@@ -283,16 +270,13 @@ SELECT
     END                                                                                AS early_resolution_sla_exception
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN DATEDIFF(
-        DAY
-        , b.created_ts_utc
-        , b.resolved_ts_utc)
+        THEN DATEDIFF(DAY, b.created_ts_utc, b.resolved_ts_utc)
       WHEN b.workflow = 'Regulatory'
-        THEN NULL
+        THEN DATEDIFF(DAY, b.received_ts_utc, b.investigated_ts_utc)
       WHEN b.workflow = 'Pre-Litigation'
-        THEN NULL
+        THEN DATEDIFF(DAY, b.received_ts_utc, b.investigated_ts_utc)
       WHEN b.workflow = 'BBB'
-        THEN NULL
+        THEN DATEDIFF(DAY, b.received_ts_utc, rbh.bbb_responded_ts_utc)
       ELSE NULL
     END                                                                                AS cert_investigation_time -- why date here?
   , b.customer_state
@@ -345,10 +329,7 @@ SELECT
   , b.secondary_issue_root_cause
   , b.severity_tier
   , b.is_handled_by_ccot
-  , IFF(
-    sa.dependent_customer_token IS NOT NULL
-    , TRUE
-    , FALSE)                                                                           AS is_dependent_account
+  , IFF(sa.dependent_customer_token IS NOT NULL, TRUE, FALSE)                          AS is_dependent_account
   , sbj.sponsoring_bank                                                                AS third_party_provider
 FROM base b
 LEFT JOIN responded_bbb_history rbh
