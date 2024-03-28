@@ -1,3 +1,4 @@
+-- CREATE OR REPLACE TABLE personal_johndarrah.public.complaints AS
 WITH
   complaints_base AS (
     SELECT
@@ -5,13 +6,17 @@ WITH
       , c.id
       , c.complaint_number
       , c.created_date_utc::TIMESTAMP_NTZ                       AS created_ts_utc
-      , c.date_complaint_closed_utc                             AS closed_ts_utc
+      , c.date_complaint_closed_utc::TIMESTAMP_NTZ              AS closed_ts_utc
       , c.created_by_id
       , c.case_id
       , c.case_number
       , c.state                                                 AS customer_state
       , c.country
-      , COALESCE(c.business_unit, 'Cash App')                   AS business_unit
+      , CASE
+          WHEN c.workflow IN ('Internal', 'Regulatory', 'Pre-Litigation', 'BBB', 'Global')
+            THEN COALESCE(c.business_unit, 'Cash App')
+          ELSE c.business_unit
+        END                                                     AS business_unit
       , c.flagged_by
       , c.complaint_review_notes
       , COALESCE(owner.employee_id::VARCHAR, tqc.queue_id)      AS owner_id              -- CF1 COMPLAINT RECORD CAN BE OWNED BY EMPLOYEE OR QUEUE; IF EMPLOYEE_ID IS NULL, COALESCE GRABS THE QUEUE OWNER_ID
@@ -37,7 +42,6 @@ WITH
       , c.complaint_status
       , c.customer_token
       , c.date_complaint_acknowledged_utc::TIMESTAMP_NTZ        AS acknowledged_ts_utc
-      , c.date_complaint_closed_utc::TIMESTAMP_NTZ              AS closed_ts_utc
       , c.date_complaint_investigated_utc::TIMESTAMP_NTZ        AS investigated_ts_utc
       , c.date_flagged_utc::TIMESTAMP_NTZ                       AS flagged_ts_utc
       , c.date_received::TIMESTAMP_NTZ                          AS received_ts_utc
@@ -61,7 +65,11 @@ WITH
       , c.secondary_issue
       , c.secondary_issue_root_cause
       , c.severity_tier
-      , c.is_handled_by_ccot
+      , CASE
+          WHEN c.workflow IN ('Regulatory', 'Pre-Litigation', 'BBB')
+            THEN TRUE
+          ELSE c.is_handled_by_ccot
+        END                                                     AS is_handled_by_ccot
       , c.date_early_resolution_due::TIMESTAMP_NTZ              AS early_resolution_due_ts_utc
       , c.date_formal_acknowledgement_due::TIMESTAMP_NTZ        AS formal_acknowledgement_due_ts_utc
       , c.date_formal_response_due::TIMESTAMP_NTZ               AS formal_response_due_ts_utc
@@ -112,10 +120,10 @@ WITH
   )
 
 SELECT
-  b.complaint_number
+  b.id                                                                                 AS complaint_id
+  , b.complaint_number
   , b.case_number
   , b.case_id
-  , b.cased_ts_utc
   , b.workflow
   , IFF(b.workflow IN ('Regulatory', 'Pre-Litigation', 'BBB'), TRUE, FALSE)            AS is_external_complaint
   , CASE
@@ -155,17 +163,6 @@ SELECT
     END                                                                                AS external_response_sent_ts_utc
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN 15
-      WHEN b.workflow = 'Regulatory'
-        THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.response_due_ts_utc)
-      WHEN b.workflow = 'Pre-Litigation'
-        THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.response_due_ts_utc)
-      WHEN b.workflow = 'BBB'
-        THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.response_due_ts_utc)
-      ELSE NULL
-    END                                                                                AS formal_response_sla_threshold
-  , CASE
-      WHEN b.workflow = 'Internal'
         THEN 6
       WHEN b.workflow = 'Regulatory'
         THEN NULL
@@ -175,17 +172,6 @@ SELECT
         THEN NULL
       ELSE NULL
     END                                                                                AS acknowledgement_sla_threshold
-  , CASE
-      WHEN b.workflow = 'Internal'
-        THEN 5
-      WHEN b.workflow = 'Regulatory'
-        THEN NULL
-      WHEN b.workflow = 'Pre-Litigation'
-        THEN NULL
-      WHEN b.workflow = 'BBB'
-        THEN NULL
-      ELSE NULL
-    END                                                                                AS early_resolution_sla_threshold
   , CASE
       WHEN b.workflow = 'Internal'
         THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.acknowledged_ts_utc)
@@ -199,6 +185,29 @@ SELECT
     END                                                                                AS time_to_acknowledge_business_days
   , CASE
       WHEN b.workflow = 'Internal'
+        AND b.is_handled_by_ccot -- was handled by cash complaint ops team, formally known as CERT
+        THEN COALESCE(time_to_acknowledge_business_days <= acknowledgement_sla_threshold, FALSE)
+      WHEN b.workflow = 'Regulatory'
+        THEN NULL
+      WHEN b.workflow = 'Pre-Litigation'
+        THEN NULL
+      WHEN b.workflow = 'BBB'
+        THEN NULL
+      ELSE NULL
+    END                                                                                AS is_complaint_in_acknowledgement_sla
+  , CASE
+      WHEN b.workflow = 'Internal'
+        THEN 5
+      WHEN b.workflow = 'Regulatory'
+        THEN NULL
+      WHEN b.workflow = 'Pre-Litigation'
+        THEN NULL
+      WHEN b.workflow = 'BBB'
+        THEN NULL
+      ELSE NULL
+    END                                                                                AS early_resolution_sla_threshold
+  , CASE
+      WHEN b.workflow = 'Internal'
         THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.closed_ts_utc)
       WHEN b.workflow = 'Regulatory'
         THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.closed_ts_utc)
@@ -210,28 +219,7 @@ SELECT
     END                                                                                AS time_to_closure_business_days
   , CASE
       WHEN b.workflow = 'Internal'
-        THEN time_to_closure_business_days <= formal_response_sla_threshold
-      WHEN b.workflow = 'Regulatory'
-        THEN time_to_closure_business_days <= formal_response_sla_threshold
-      WHEN b.workflow = 'Pre-Litigation'
-        THEN time_to_closure_business_days <= formal_response_sla_threshold
-      WHEN b.workflow = 'BBB'
-        THEN time_to_closure_business_days <= formal_response_sla_threshold
-      ELSE FALSE
-    END                                                                                AS is_compliant_informal_response_sla
-  , CASE
-      WHEN b.workflow = 'Internal'
-        THEN COALESCE(time_to_acknowledge_business_days <= acknowledgement_sla_threshold, FALSE)
-      WHEN b.workflow = 'Regulatory'
-        THEN NULL
-      WHEN b.workflow = 'Pre-Litigation'
-        THEN NULL
-      WHEN b.workflow = 'BBB'
-        THEN NULL
-      ELSE NULL
-    END                                                                                AS is_compliant_in_acknowledgement_sla
-  , CASE
-      WHEN b.workflow = 'Internal'
+        AND NOT b.is_handled_by_ccot -- not handled by cash complaint ops team, formally known as CERT
         THEN COALESCE(time_to_closure_business_days <= early_resolution_sla_threshold, FALSE)
       WHEN b.workflow = 'Regulatory'
         THEN NULL
@@ -240,7 +228,30 @@ SELECT
       WHEN b.workflow = 'BBB'
         THEN NULL
       ELSE NULL
-    END                                                                                AS is_compliant_in_early_resolution_sla
+    END                                                                                AS is_complaint_in_early_resolution_sla
+  , CASE
+      WHEN b.workflow = 'Internal'
+        THEN 15
+      WHEN b.workflow = 'Regulatory'
+        THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.response_due_ts_utc)
+      WHEN b.workflow = 'Pre-Litigation'
+        THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.response_due_ts_utc)
+      WHEN b.workflow = 'BBB'
+        THEN app_cash_cs.public.business_days_between(b.received_ts_utc, b.response_due_ts_utc)
+      ELSE NULL
+    END                                                                                AS response_sla_threshold
+  , CASE
+      WHEN b.workflow = 'Internal'
+        AND NOT is_complaint_in_early_resolution_sla
+        THEN time_to_closure_business_days <= response_sla_threshold
+      WHEN b.workflow = 'Regulatory'
+        THEN time_to_closure_business_days <= response_sla_threshold
+      WHEN b.workflow = 'Pre-Litigation'
+        THEN time_to_closure_business_days <= response_sla_threshold
+      WHEN b.workflow = 'BBB'
+        THEN time_to_closure_business_days <= response_sla_threshold
+      ELSE FALSE
+    END                                                                                AS is_complaint_in_formal_response_sla
   , CASE
       WHEN b.workflow = 'Internal'
         THEN DATEDIFF(DAY, b.created_ts_utc, b.resolved_ts_utc)
@@ -251,11 +262,11 @@ SELECT
       WHEN b.workflow = 'BBB'
         THEN DATEDIFF(DAY, b.received_ts_utc, rbh.bbb_responded_ts_utc)
       ELSE NULL
-    END                                                                                AS cert_investigation_time
+    END                                                                                AS cert_investigation_time_days
   , b.customer_state
   , b.country
   , b.escalated_to_legal
-  , b.escalated_to_external_partner_ts_utc
+  , b.escalated_to_legal_ts_utc
   , b.root_cause_notes
   , b.complaint_review_notes
   , b.primary_complaint
@@ -312,6 +323,4 @@ LEFT JOIN app_cash.app.sponsored_accounts sa --for identifying teen accounts:is_
   ON b.customer_token = sa.dependent_customer_token
 LEFT JOIN sponsoring_bank sb
   ON b.customer_token = sb.customer_token -- for identifying third party provider
-ORDER BY created_ts_utc DESC
-LIMIT 100
 ;
