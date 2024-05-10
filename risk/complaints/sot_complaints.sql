@@ -78,7 +78,7 @@ WITH
       , c.portal
       , c.pushback
       , c.rejected_response
-      , c.date_response_sent_utc::TIMESTAMP_NTZ                 AS external_response_sent_ts_utc
+      , c.date_response_sent_pst::TIMESTAMP_NTZ                 AS external_response_sent_ts_utc
       , c.date_response_due::TIMESTAMP_NTZ                      AS response_due_ts_utc
     FROM cash_complaints.xanadu_testing.clean_complaints c
     LEFT JOIN app_datamart_cco.workday.cs_employees_and_agents modifier
