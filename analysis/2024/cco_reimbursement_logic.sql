@@ -1,4 +1,5 @@
 CREATE OR REPLACE TABLE personal_johndarrah.public.reimbursements_v1 AS
+  -- p2p reimbursements from Cash: new payment_id
   SELECT
     ps.payment_id
     , ps.recipient_token                           AS customer_token
@@ -60,6 +61,7 @@ CREATE OR REPLACE TABLE personal_johndarrah.public.reimbursements_v1 AS
 
   UNION
 
+  -- refunds back to sender: same payment_id
   SELECT
     ps.payment_id
     , ps.sender_token                           AS customer_token
@@ -67,7 +69,7 @@ CREATE OR REPLACE TABLE personal_johndarrah.public.reimbursements_v1 AS
     , ps.created_at                             AS payment_created_at
     , ps.amount_usd                             AS payment_amount_usd
     , ps.recipient_token                        AS payment_recipient_token
-    , ps.sender_token                           AS payment_recipient_token
+    , ps.sender_token                           AS payment_sender_token
     , ps.initiator_notes                        AS payment_initiator_notes
     , ps.creation_mechanism                     AS payment_creation_mechanism
     , ps.state                                  AS payment_state
