@@ -2,7 +2,7 @@ CREATE OR REPLACE TABLE personal_johndarrah.public.reimbursements_v1 AS
   SELECT
     ps.payment_id
     , ps.recipient_token                           AS customer_token
-    , 'P2P Reimbursement - New Payment ID'         AS type
+    , 'P2P Reimbursement'                          AS type -- New Payment ID
     , ps.created_at                                AS payment_created_at
     , ps.amount_usd                                AS payment_amount_usd
     , ps.sender_token                              AS payment_sender_token
@@ -60,7 +60,7 @@ CREATE OR REPLACE TABLE personal_johndarrah.public.reimbursements_v1 AS
   SELECT
     ps.payment_id
     , ps.sender_token                              AS customer_token
-    , 'Refund - Same Payment ID'                   AS type
+    , 'Refund'                                     AS type                   -- Same Payment ID
     , ps.created_at                                AS payment_created_at
     , ps.amount_usd                                AS payment_amount_usd
     , NULL                                         AS payment_sender_token   -- refunded from Cash
