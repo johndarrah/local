@@ -10,27 +10,33 @@ WITH
   -- ) ,
   ato_hashtags AS (
     SELECT
-      h.target_token                                                          AS customer_token
-      , REGEXP_SUBSTR(h.comment, '[0-9]{8}([0-9]{1})?')                       AS comment_case_number
-      , CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', h.hashtag_date_time)   AS hashtag_ts_utc
-      -- , h.target_token || h.hashtag_date_time                                 AS unique_identifier
+      h.target_token                                                                                 AS customer_token
+      , REGEXP_SUBSTR(h.comment, '[0-9]{8}([0-9]{1})?')                                              AS comment_case_number
+      , CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', h.hashtag_date_time)                          AS hashtag_ts_utc
       , h.full_name
-      , h.ldap                                                                AS advocate_ldap
+      , h.ldap                                                                                       AS advocate_ldap
       , h.employee_id
       , h.comment
       , h.hashtag
+      , ARRAY_AGG(DISTINCT LOWER(h.hashtag)) OVER (PARTITION BY h.target_token ,comment_case_number) AS hashtag_array
       , CASE
-          WHEN TRIM(h.comment) ILIKE '%#$ATO_INV_ATO%'
+          WHEN ARRAY_CONTAINS('ato_inv_ato'::VARIANT, hashtag_array)
             THEN 'Self Reported'
-          WHEN TRIM(h.comment) ILIKE '%#$ATO_INV_LATO%'
+          WHEN ARRAY_CONTAINS('ato_inv_lato'::VARIANT, hashtag_array)
             THEN 'Auto-Lock'
           ELSE 'Other'
-        END                                                                   AS autolock_or_self_reported
+        END                                                                                          AS autolock_or_self_reported
       , CASE
-          WHEN TRIM(h.comment) ILIKE ANY ('%#$ATO_RESET_CONFIRMED%', '%#$ATO_REIMBURSMENT%', '%#$ATO_SECURED_FFATO%')
+          WHEN ARRAY_CONTAINS('ato_reset_confirmed'::VARIANT, hashtag_array)
+            THEN TRUE
+          WHEN ARRAY_CONTAINS('ato_reimbursment'::VARIANT, hashtag_array)
+            THEN TRUE
+          WHEN ARRAY_CONTAINS('ato_secured_ffato'::VARIANT, hashtag_array)
+            THEN TRUE
+          WHEN ARRAY_CONTAINS('ato_p2p_escalation'::VARIANT, hashtag_array)
             THEN TRUE
           ELSE FALSE
-        END                                                                   AS is_confirmed_ato
+        END                                                                                          AS is_confirmed_ato
       , CASE
           WHEN autolock_or_self_reported = 'Auto-Lock'
             AND is_confirmed_ato
@@ -39,8 +45,7 @@ WITH
             AND is_confirmed_ato
             THEN 'Confirmed Self Reported'
           ELSE NULL
-        END                                                                   AS ato_type
-      , ARRAY_AGG(DISTINCT h.hashtag) OVER (PARTITION BY comment_case_number) AS hashtag_array
+        END                                                                                          AS ato_type
     -- , h.ato_hash_key
     -- , ROW_NUMBER() OVER (PARTITION BY customer_token, h.comment, h.hashtag_at ORDER BY h.hashtag_at DESC)    AS hashtag_row_number
     -- , ROW_NUMBER() OVER (PARTITION BY customer_token, comment_case_number ORDER BY h.hashtag_date_time DESC) AS comment_row_number
@@ -55,7 +60,7 @@ WITH
     WHERE
       1 = 1
       AND YEAR(hashtag_ts_utc) >= 2023
-      AND is_confirmed_ato
+      QUALIFY is_confirmed_ato
     -- LEFT JOIN correction_comments cc
     --   ON comment_case_number = cc.correction_comment_case_number
   )
@@ -89,42 +94,48 @@ WITH
       1 = 1
       AND YEAR(d.submitted_at_utc) >= 2023
   )
-
-SELECT DISTINCT
-  ah.customer_token
-  , ah.comment_case_number
-  , ah.hashtag_ts_utc
-  , ah.hashtag
-  , ah.autolock_or_self_reported
-  , ah.is_confirmed_ato
-  , ah.ato_type
-  , ah.advocate_ldap
-  , ah.hashtag_array
-  , r.category
-  , r.mass_rollback_type
-  , r.rolled_back_to_ts_utc
-  , r.roll_back_actioned_ts_utc
--- , n.category         AS notary_category
--- , n.reason           AS notary_reason
--- , n.submitted_at_utc AS notary_submitted_at_utc
--- , n.locking_models   AS notary_locking_models
--- , n.advocate_ldap    AS notary_advocate_ldap
-FROM rollbacks r
-LEFT JOIN ato_hashtags ah
-  ON  r.customer_token = ah.customer_token
-  AND  r.roll_back_actioned_ts_utc::DATE = ah.hashtag_ts_utc::DATE
-LEFT JOIN notary n
-  ON ah.customer_token = n.customer_token
-  AND ah.hashtag_ts_utc::DATE = n.submitted_at_utc::DATE
+  , base AS (
+    SELECT DISTINCT
+      r.customer_token
+      , r.category
+      , r.mass_rollback_type
+      , r.rolled_back_to_ts_utc
+      , r.roll_back_actioned_ts_utc
+      , ah.comment
+      , ah.hashtag
+      , ah.comment_case_number
+      , ah.autolock_or_self_reported
+      , ah.is_confirmed_ato
+      , ah.ato_type
+      , ah.advocate_ldap
+      , ah.hashtag_array
+      , sc.case_id
+      , sc.case_number
+      , CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', sc.case_creation_date_time) AS case_creation_ts_utc
+      , sc.last_assigned_queue
+    FROM rollbacks r
+    LEFT JOIN app_cash_cs.public.support_cases sc
+      ON r.customer_token = sc.customer_token
+      AND CONVERT_TIMEZONE('America/Los_Angeles', 'UTC', sc.case_creation_date_time) BETWEEN r.rolled_back_to_ts_utc AND r.roll_back_actioned_ts_utc
+      -- AND last_assigned_queue = 'Risk ATO'
+    LEFT JOIN ato_hashtags ah
+      ON r.customer_token = ah.customer_token
+      AND r.roll_back_actioned_ts_utc::DATE = ah.hashtag_ts_utc::DATE
+    LEFT JOIN notary n
+      ON ah.customer_token = n.customer_token
+      AND ah.hashtag_ts_utc::DATE = n.submitted_at_utc::DATE
+    WHERE
+      1 = 1
+      AND r.mass_rollback_type IS NULL
+      AND NVL(r.category, '') NOT IN ('FRIENDLY_FRAUD_ATO', 'RAT_ANDROID')
+      AND r.roll_back_actioned_ts_utc IS NOT NULL
+    -- AND ah.comment_case_number = '122893444'
+    -- AND ah.autolock_or_self_reported = 'Other'
+    ORDER BY ah.comment_case_number
+  )
+SELECT *
+FROM base
 WHERE
   1 = 1
-  -- AND r.customer_token IS NULL
-  AND ah.customer_token = 'C_5ednd1m75'
--- AND r.mass_rollback_type IS NULL
--- AND NVL(r.category, '') NOT IN ('FRIENDLY_FRAUD_ATO', 'RAT_ANDROID')
--- AND r.roll_back_actioned_ts_utc IS NOT NULL
--- AND ah.comment_case_number = '122893444'
--- AND ah.autolock_or_self_reported = 'Other'
-ORDER BY ah.comment_case_number
-;
-
+  AND customer_token = 'C_fqdeq1mvw'
+-- NVL(autolock_or_self_reported, 'Other') = 'Other'
