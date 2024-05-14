@@ -79,6 +79,7 @@ WITH
             THEN 'Self Reported'
           ELSE 'No Applicable Hashtag'
         END                                                                        AS autolock_or_self_reported
+      , NVL(ah.autolock_or_self_reported, 'No Applicable Hashtag')                 AS autolock_or_self_reported_v2
       , ah.is_confirmed_via_hashtag
       , ah.ato_type
       , ah.advocate_ldap
@@ -103,26 +104,29 @@ WITH
     ORDER BY ah.comment_case_number
   )
 --------------------- Counts
-SELECT DISTINCT
-  autolock_or_self_reported
-  , COUNT(*)
-  , COUNT(DISTINCT rollback_id)
-FROM base
-WHERE
-  1 = 1
-GROUP BY 1
-;
+-- SELECT DISTINCT
+--   autolock_or_self_reported
+--   , COUNT(*)
+--   , COUNT(DISTINCT rollback_id)
+-- FROM base
+-- WHERE
+--   1 = 1
+-- GROUP BY 1
+-- ;
 
 --------------------- Pulling ATO details
 
-SELECT DISTINCT *
+SELECT
+  last_assigned_queue
+  , COUNT(*)
 FROM base
 WHERE
   1 = 1
   -- AND case_id = '5005w00002QA5QnAAL'
   -- AND customer_token = 'C_g62hagynx'
-  AND autolock_or_self_reported = 'No Applicable Hashtag'
-
+  AND autolock_or_self_reported_v2 = 'No Applicable Hashtag'
+GROUP BY 1
+;
 
 --------------------- Validation for missing hashtags
 -- SELECT DISTINCT
