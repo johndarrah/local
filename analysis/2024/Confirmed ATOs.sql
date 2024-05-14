@@ -41,15 +41,7 @@ WITH
     WHERE
       1 = 1
       AND YEAR(hashtag_ts_utc) >= 2024
-      AND hashtag IN ('ATO_INV_LATO',
-                      'ATO_INV_ATO'
-        -- 'ATO_RESET_CONFIRMED'
-        -- 'ATO_P2P_ESCALATION',
-        -- 'ATO_REIMBURSMENT'
-        )
-    -- AND customer_token = 'C_g62hagynx'
-    -- QUALIFY
-    --   ROW_NUMBER() OVER (PARTITION BY customer_token, hashtag_ts_utc::DATE ORDER BY autolock_or_self_reported != 'No Applicable Hashtag' DESC) = 1
+      AND hashtag IN ('ATO_INV_LATO', 'ATO_INV_ATO')
   )
   , rollbacks AS (
     SELECT
