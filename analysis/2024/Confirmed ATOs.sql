@@ -40,7 +40,7 @@ WITH
     FROM app_cash_cs.public.ato_hashtags h -- https://github.com/squareup/app-datamart-cco/blob/main/jobs/regulator_risk_hashtags/regulator_risk_hashtags.sql
     WHERE
       1 = 1
-      AND YEAR(hashtag_ts_utc) >= 2023
+      AND YEAR(hashtag_ts_utc) >= 2024
     QUALIFY
       is_confirmed_ato
   )
@@ -57,7 +57,7 @@ WITH
       1 = 1
       AND r.mass_rollback_type IS NULL
       AND NVL(r.category, '') NOT IN ('FRIENDLY_FRAUD_ATO', 'RAT_ANDROID')
-      AND YEAR(roll_back_actioned_ts_utc) >= 2023
+      AND YEAR(roll_back_actioned_ts_utc) >= 2024
     -- remove dupicate rollbacks occuring on the same day
     QUALIFY
       ROW_NUMBER() OVER (PARTITION BY r.customer_id,r.created_at::DATE ORDER BY r.created_at DESC) = 1
