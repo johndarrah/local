@@ -42,10 +42,14 @@ WITH
       1 = 1
       AND YEAR(hashtag_ts_utc) >= 2024
       AND hashtag IN ('ATO_INV_LATO',
-                      'ATO_INV_ATO',
-                      'ATO_RESET_CONFIRMED',
-                      'ATO_P2P_ESCALATION',
-                      'ATO_REIMBURSMENT')
+                      'ATO_INV_ATO'
+        -- 'ATO_RESET_CONFIRMED'
+        -- 'ATO_P2P_ESCALATION',
+        -- 'ATO_REIMBURSMENT'
+        )
+    -- AND customer_token = 'C_g62hagynx'
+    -- QUALIFY
+    --   ROW_NUMBER() OVER (PARTITION BY customer_token, hashtag_ts_utc::DATE ORDER BY autolock_or_self_reported != 'No Applicable Hashtag' DESC) = 1
   )
   , rollbacks AS (
     SELECT
@@ -75,7 +79,14 @@ WITH
       , r.roll_back_actioned_ts_utc
       , ah.hashtag_ts_utc
       , ah.comment_case_number
-      , NVL(ah.autolock_or_self_reported, 'No Applicable Hashtag')                 AS autolock_or_self_reported
+      , CASE
+          WHEN ah.autolock_or_self_reported IS NOT NULL
+            THEN ah.autolock_or_self_reported
+          WHEN ah.autolock_or_self_reported IS NULL
+            AND sc.case_id IS NOT NULL
+            THEN 'Self Reported'
+          ELSE 'No Applicable Hashtag'
+        END                                                                        AS autolock_or_self_reported
       , ah.is_confirmed_via_hashtag
       , ah.ato_type
       , ah.advocate_ldap
@@ -99,24 +110,25 @@ WITH
       ROW_NUMBER() OVER (PARTITION BY rollback_id ORDER BY last_assigned_queue = 'Risk ATO' DESC,case_creation_ts_utc) = 1
     ORDER BY ah.comment_case_number
   )
--- -- counts
--- SELECT DISTINCT
---   autolock_or_self_reported
---   , COUNT(*)
---   , COUNT(DISTINCT rollback_id)
--- FROM base
--- WHERE
---   1 = 1
--- GROUP BY 1
--- ;
+--------------------- Counts
+SELECT DISTINCT
+  autolock_or_self_reported
+  , COUNT(*)
+  , COUNT(DISTINCT rollback_id)
+FROM base
+WHERE
+  1 = 1
+GROUP BY 1
+;
 
+--------------------- Pulling ATO details
 
 SELECT DISTINCT *
 FROM base
 WHERE
   1 = 1
-  -- AND customer_token = 'C_80dn4pyz2'
-
+  -- AND case_id = '5005w00002QA5QnAAL'
+  -- AND customer_token = 'C_g62hagynx'
   AND autolock_or_self_reported = 'No Applicable Hashtag'
 
 
@@ -157,7 +169,7 @@ WHERE
 --   autolock_or_self_reported = 'Self Reported'
 --   AND NOT is_confirmed_ato
 
--- -- confirmed atos count alignment
+--------------------- confirmed atos count alignment
 -- WITH
 --   base AS (
 --     SELECT DISTINCT *
