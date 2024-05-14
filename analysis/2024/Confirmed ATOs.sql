@@ -58,7 +58,7 @@ WITH
       AND r.mass_rollback_type IS NULL
       AND NVL(r.category, '') NOT IN ('FRIENDLY_FRAUD_ATO', 'RAT_ANDROID')
       AND YEAR(roll_back_actioned_ts_utc) >= 2024
-    -- remove dupicate rollbacks occuring on the same day
+    -- remove duplicate rollbacks occuring on the same day
     QUALIFY
       ROW_NUMBER() OVER (PARTITION BY r.customer_id,r.created_at::DATE ORDER BY r.created_at DESC) = 1
   )
