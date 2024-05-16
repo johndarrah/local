@@ -117,7 +117,7 @@ CREATE OR REPLACE TABLE personal_johndarrah.public.reimbursements_v1 AS
     AND ps.created_at::DATE >= '2023-07-01'
     AND ps.failure_reason = 'MANUALLY_REVERSED'
     AND ps.pull_result = 'SUCCESS' -- https://wiki.sqprod.co/display/CashKnowledgebase/Payment+Pulls+and+Pushes
-  -- remove payments tied to more than one case -- test
+  -- remove payments tied to more than one case
   QUALIFY
     ROW_NUMBER() OVER (PARTITION BY ps.payment_id ORDER BY sc.case_creation_date_time) = 1
 ;

@@ -117,15 +117,16 @@ WITH
 --------------------- Pulling ATO details
 
 SELECT
-  last_assigned_queue
-  , COUNT(*)
+  *
+  -- last_assigned_queue
+  -- , COUNT(*)
 FROM base
 WHERE
   1 = 1
   -- AND case_id = '5005w00002QA5QnAAL'
   -- AND customer_token = 'C_g62hagynx'
   AND autolock_or_self_reported_v2 = 'No Applicable Hashtag'
-GROUP BY 1
+-- GROUP BY 1
 ;
 
 --------------------- Validation for missing hashtags
