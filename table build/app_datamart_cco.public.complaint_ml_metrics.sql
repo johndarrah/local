@@ -1,3 +1,6 @@
+-- https://docs.google.com/document/d/1Ip1jiO4398DLXdm8TtySftDZtgyregrIj66DtKxIu2M/edit
+-- https://docs.google.com/document/d/1t8HXvy3ZLS21PLO_1SA6holNYF-5vElvaFeeRy5hIWw/edit#heading=h.7a6nv3vawz0
+
 CREATE OR REPLACE TABLE app_datamart_cco.public.complaint_ml_metrics AS
   WITH
     ccot_reviews AS (
