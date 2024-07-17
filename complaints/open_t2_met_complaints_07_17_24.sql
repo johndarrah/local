@@ -80,7 +80,10 @@ CREATE OR REPLACE TABLE personal_johndarrah.public.open_t2_met_complaints_07_17_
     , c.complaint_id
     , c.complaint_status
     , c.created_ts_utc                                                             AS complaint_created_ts_utc
+    , b.complaint_review_notes
   FROM app_datamart_cco.public.complaints_base_public AS c
+  JOIN cash_complaints.public.complaints_base b
+    ON c.complaint_id = b.complaint_id
   LEFT JOIN app_datamart_cco.public.cash_support_cases_wide AS sc
     ON (c.case_id) = sc.case_id
   LEFT JOIN complaints_first_met_specialist
@@ -93,7 +96,7 @@ CREATE OR REPLACE TABLE personal_johndarrah.public.open_t2_met_complaints_07_17_
     (c.complaint_status) = 'In Progress'
     AND (c.severity_tier) = 'Tier 2'
     AND (CASE
-           WHEN NOT is_duplicate
+           WHEN NOT c.is_duplicate
              AND (c.workflow) NOT IN ('Lending', 'Investing', 'Global')
              AND (c.complaint_status) NOT IN ('Inquiry (Not a Complaint)', 'Withdrawn')
              AND (c.business_unit) = 'Cash App' --Excludes complaints for other business units (reported separately)
@@ -115,6 +118,7 @@ GRANT ALL ON TABLE personal_johndarrah.public.open_t2_met_complaints_07_17_24 TO
 ;
 
 -- test table
-SELECT *
+SELECT DISTINCT
+  complaint_review_notes
 FROM personal_johndarrah.public.open_t2_met_complaints_07_17_24
 ;
