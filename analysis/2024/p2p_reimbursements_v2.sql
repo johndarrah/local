@@ -83,7 +83,7 @@ CREATE OR REPLACE TABLE personal_johndarrah.public.p2p_reimbursements_v2 AS
    1 = 1
    AND ps.creation_mechanism = 'REIMBURSEMENT'
    AND ps.sender_token = 'C_hmd8xayr1'
-   AND ps.created_at::DATE >= '2024-04-01'
+   AND ps.created_at::DATE >= '2024-01-01'
    AND ps.state = 'PAID_OUT'
  QUALIFY
    ROW_NUMBER() OVER (PARTITION BY ps.payment_id ORDER BY ff.banking_transaction_token IS NULL DESC, al.created_at) = 1
@@ -102,26 +102,34 @@ GRANT ALL ON TABLE personal_johndarrah.public.p2p_reimbursements_v2 TO ROLE app_
 ;
 
 
+-- Action Items
+
+-- complaint cases
 
 SELECT
-  has_cf1_case_from_reg
-  , has_notary_case
-  , has_cf1_case_from_3_day_diff
-  , has_payment_id_on_cf1_case
-  , has_regulator_case
-  , COUNT(*)
-FROM personal_johndarrah.public.test
-GROUP BY 1, 2, 3, 4, 5
+  REGEXP_SUBSTR(regulator_comment, '[0-9]{8}([0-9]{1})?')::VARCHAR AS case_id
+  , REGEXP_SUBSTR(regulator_comment, 'CCN-[0-9]+')                 AS complaint_id
+  , regulator_comment
+FROM personal_johndarrah.public.p2p_reimbursements_v2
+WHERE
+  1 = 1
+  AND customer_token = 'C_5qd2aqywk'
+
+-- add case entities table to check for multiple payments
+SELECT *
+FROM app_cash_cs.preprod.franklin_flow ff2
+WHERE
+  case_id IN ('5005w00002PDPT9AAP', '5005w00002NFAWfAAP')
+
+;
+
+SELECT *
+FROM app_datamart_cco.sfdc_cfone.case_entities
+WHERE
+  case_id IN ('5005w00002PDPT9AAP', '5005w00002NFAWfAAP')
 
 ;
 
 
-SELECT *
-FROM personal_johndarrah.public.p2p_reimbursements_v2
-WHERE
-  1 = 1
-  AND NOT has_cf1_case_from_reg
-  AND NOT has_notary_case
-  AND NOT has_cf1_case_from_3_day_diff
-  AND NOT has_payment_id_on_cf1_case
-  AND NOT has_regulator_case
+-- add prioritization on the strongest case
+-- tbd
